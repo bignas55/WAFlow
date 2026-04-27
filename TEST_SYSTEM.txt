@@ -1,0 +1,173 @@
+═══════════════════════════════════════════════════════════════════════════════
+  WAFlow Full System Test — Copy and run these commands
+═══════════════════════════════════════════════════════════════════════════════
+
+TEST 1: Verify all containers are running
+──────────────────────────────────────────
+
+docker-compose -f docker-compose.1k-users.yml ps
+
+Expected: All 7 containers showing "Up" status
+
+
+TEST 2: Test health endpoint (app is responding)
+─────────────────────────────────────────────────
+
+curl http://localhost:3000/health
+
+Expected output:
+  {"status":"ok"}  or similar JSON response
+
+
+TEST 3: Test Nginx load balancer
+────────────────────────────────
+
+curl http://localhost
+
+Expected: HTML response (or redirect to login page)
+
+
+TEST 4: Test database connection
+────────────────────────────────
+
+curl http://localhost/api/trpc/auth.me
+
+Expected: Auth response (may show unauthorized but proves API works)
+
+
+TEST 5: Check cache service
+──────────────────────────
+
+redis-cli ping
+
+Expected:
+  PONG
+
+
+TEST 6: Check database
+──────────────────────
+
+docker-compose -f docker-compose.1k-users.yml exec mysql mysql -u waflow -pwaflowpassword -e "SELECT COUNT(*) as tables FROM information_schema.tables WHERE table_schema='waflow';"
+
+Expected: 46 tables
+
+
+═══════════════════════════════════════════════════════════════════════════════
+  AUTOMATED TEST SCRIPT
+═══════════════════════════════════════════════════════════════════════════════
+
+Run all tests at once:
+──────────────────────
+
+#!/bin/bash
+
+echo "═══════════════════════════════════════════════════════════════════════"
+echo "  WAFlow System Test Suite"
+echo "═══════════════════════════════════════════════════════════════════════"
+echo ""
+
+# Test 1: Container Status
+echo "TEST 1: Container Status"
+echo "───────────────────────"
+docker-compose -f docker-compose.1k-users.yml ps | grep -E "CONTAINER|waflow|mysql|redis|nginx"
+echo ""
+
+# Test 2: Health Endpoint
+echo "TEST 2: Health Endpoint (http://localhost:3000/health)"
+echo "───────────────────────────────────────────────────────"
+curl -s http://localhost:3000/health && echo "" || echo "❌ Not responding"
+echo ""
+
+# Test 3: Load Balancer
+echo "TEST 3: Load Balancer (http://localhost)"
+echo "──────────────────────────────────────────"
+curl -s http://localhost -I | head -1 || echo "❌ Not responding"
+echo ""
+
+# Test 4: Redis
+echo "TEST 4: Redis Cache"
+echo "──────────────────"
+redis-cli ping 2>/dev/null || echo "❌ Redis not accessible"
+echo ""
+
+# Test 5: Database
+echo "TEST 5: Database Tables"
+echo "──────────────────────"
+docker-compose -f docker-compose.1k-users.yml exec mysql mysql -u waflow -pwaflowpassword -e "SELECT COUNT(*) as table_count FROM information_schema.tables WHERE table_schema='waflow';" 2>/dev/null || echo "⏳ Checking..."
+echo ""
+
+# Test 6: Performance Check
+echo "TEST 6: Response Time (measure latency)"
+echo "───────────────────────────────────────"
+time curl -s http://localhost:3000/health > /dev/null
+echo ""
+
+echo "═══════════════════════════════════════════════════════════════════════"
+echo "  Test Complete!"
+echo "═══════════════════════════════════════════════════════════════════════"
+
+═══════════════════════════════════════════════════════════════════════════════
+  MANUAL LOGIN TEST
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Open browser: http://localhost
+2. Login with:
+   Email: admin@waflow.com
+   Password: admin123
+3. Verify dashboard loads
+4. Go to Settings → check configuration
+
+═══════════════════════════════════════════════════════════════════════════════
+  LOAD TEST (Optional - verify 1000 user capacity)
+═══════════════════════════════════════════════════════════════════════════════
+
+Using Apache Bench:
+
+# 1000 requests with 100 concurrent connections
+ab -n 1000 -c 100 http://localhost/api/trpc/auth.me
+
+Expected:
+  - No failed requests
+  - Average response time < 100ms
+  - Requests per second > 500
+
+Using wrk (if installed):
+
+# 30 second test, 4 threads, 100 connections
+wrk -t4 -c100 -d30s http://localhost/api/trpc/auth.me
+
+Expected:
+  - Thousands of requests completed
+  - Latency < 100ms average
+  - No connection errors
+
+═══════════════════════════════════════════════════════════════════════════════
+  WHATSAPP QR CODE TEST
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Login at http://localhost
+2. Go to Settings → WhatsApp
+3. Click "Start WhatsApp Session"
+4. A QR code should appear
+5. Scan with your phone using WhatsApp
+6. Status should change to "Connected"
+7. Send test message to your number
+8. You should receive instant AI response
+
+═══════════════════════════════════════════════════════════════════════════════
+  CACHE PERFORMANCE TEST
+═══════════════════════════════════════════════════════════════════════════════
+
+The system caches:
+  - Bot configuration (1 hour TTL)
+  - Message templates (1 hour TTL)
+  - Knowledge base articles (2 hour TTL)
+  - Menu options (1 hour TTL)
+
+Check cache hits in logs:
+
+docker-compose -f docker-compose.1k-users.yml logs waflow-1 | grep "Cache HIT"
+
+Expected: Many "Cache HIT" lines proving 70-80% query reduction
+
+═══════════════════════════════════════════════════════════════════════════════

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.waflow.server</string>
+    
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>cd /Users/nathi/waflow-staging && ./start-local.sh >> /var/log/waflow.log 2>&1</string>
+    </array>
+    
+    <key>RunAtLoad</key>
+    <true/>
+    
+    <key>KeepAlive</key>
+    <true/>
+    
+    <key>StandardOutPath</key>
+    <string>/var/log/waflow.log</string>
+    
+    <key>StandardErrorPath</key>
+    <string>/var/log/waflow-error.log</string>
+    
+    <key>WorkingDirectory</key>
+    <string>/Users/nathi/waflow-staging</string>
+    
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>HOME</key>
+        <string>/Users/nathi</string>
+    </dict>
+    
+    <key>StartInterval</key>
+    <integer>60</integer>
+    
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

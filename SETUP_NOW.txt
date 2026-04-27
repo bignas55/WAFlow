@@ -1,0 +1,99 @@
+═══════════════════════════════════════════════════════════════════════════════
+  🔧 DATABASE INITIALIZATION FIX — RUN THIS NOW
+═══════════════════════════════════════════════════════════════════════════════
+
+The previous deployment had containers restarting because the database wasn't
+being initialized. This is now FIXED.
+
+What Changed:
+  ✅ Created docker-entrypoint.sh — runs migrations & seeds DB on startup
+  ✅ Updated Dockerfile — uses entrypoint script for initialization
+  ✅ Updated rebuild script — handles all setup automatically
+
+═══════════════════════════════════════════════════════════════════════════════
+  ONE COMMAND TO RUN EVERYTHING:
+═══════════════════════════════════════════════════════════════════════════════
+
+chmod +x rebuild-and-start-fixed.sh && ./rebuild-and-start-fixed.sh
+
+═══════════════════════════════════════════════════════════════════════════════
+  What This Script Does
+═══════════════════════════════════════════════════════════════════════════════
+
+1. ✅ Stops old containers
+2. ✅ Builds new Docker image (2-3 minutes)
+   - Installs Chromium for WWJS
+   - Includes database initialization script
+3. ✅ Starts all services (MySQL, Redis, 3x App, Nginx)
+4. ✅ Waits for MySQL and Redis to be healthy
+5. ✅ Waits for app containers to initialize (runs migrations + seeds DB)
+6. ✅ Tests API endpoint to verify everything works
+7. ✅ Shows logs to confirm successful startup
+
+═══════════════════════════════════════════════════════════════════════════════
+  Timeline After Running Command
+═══════════════════════════════════════════════════════════════════════════════
+
+0-10s:    Stops old containers
+10-30s:   Builds Docker image (downloading Alpine + Node + Chromium)
+30-60s:   Starts all services
+60-90s:   Services become healthy
+90-120s:  App containers run migrations and seed database
+120-150s: API becomes available
+150s+:    Ready to use!
+
+═══════════════════════════════════════════════════════════════════════════════
+  After Script Completes (takes ~2-3 minutes total)
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Open browser and go to:
+   http://localhost
+
+2. Login with these credentials:
+   Email:    admin@waflow.com
+   Password: admin123
+
+3. Go to: Settings → WhatsApp
+
+4. Click: "Start WhatsApp Session"
+
+5. Scan the QR code with your phone
+
+6. You should see "Connected" status!
+
+═══════════════════════════════════════════════════════════════════════════════
+  If You Need to Check Logs
+═══════════════════════════════════════════════════════════════════════════════
+
+While script is running (in another terminal):
+  docker-compose -f docker-compose.1k-users.yml logs -f waflow-app-1
+
+After deployment, to view app logs:
+  docker-compose -f docker-compose.1k-users.yml logs waflow-app-1
+
+Check container status:
+  docker-compose -f docker-compose.1k-users.yml ps
+
+═══════════════════════════════════════════════════════════════════════════════
+  Troubleshooting
+═══════════════════════════════════════════════════════════════════════════════
+
+If containers keep restarting:
+  Check app logs:
+    docker-compose -f docker-compose.1k-users.yml logs waflow-app-1 --tail 50
+
+If database isn't initializing:
+  Check MySQL is running:
+    docker-compose -f docker-compose.1k-users.yml exec mysql mysqladmin ping
+
+If Chromium isn't working:
+  Verify installation:
+    docker-compose -f docker-compose.1k-users.yml exec waflow-app-1 chromium-browser --version
+
+═══════════════════════════════════════════════════════════════════════════════
+  🚀 Ready? Run This Now:
+═══════════════════════════════════════════════════════════════════════════════
+
+chmod +x rebuild-and-start-fixed.sh && ./rebuild-and-start-fixed.sh
+
+═══════════════════════════════════════════════════════════════════════════════

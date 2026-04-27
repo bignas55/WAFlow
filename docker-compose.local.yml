@@ -1,0 +1,150 @@
+version: '3.8'
+
+services:
+  # MySQL Database - Local development
+  mysql:
+    image: mysql:8.0.36
+    container_name: waflow-mysql-local
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data_local:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - waflow-local
+    command: >
+      --default-authentication-plugin=mysql_native_password
+      --max-connections=200
+      --max_allowed_packet=256M
+      --innodb-buffer-pool-size=1G
+      --innodb-log-file-size=256M
+
+  # Redis - Message queue & caching
+  redis:
+    image: redis:7.0-alpine
+    container_name: waflow-redis-local
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data_local:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - waflow-local
+    command: >
+      redis-server
+      --maxmemory 1gb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+
+  # WAFlow Application - Local development
+  waflow:
+    build:
+      context: .
+      dockerfile: Dockerfile.staging
+    container_name: waflow-app-local
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Database
+      DATABASE_URL: ${DATABASE_URL}
+      DB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+
+      # Auth
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
+
+      # Encryption
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+
+      # AI Configuration
+      AI_API_URL: ${AI_API_URL}
+      AI_API_KEY: ${AI_API_KEY}
+      AI_MODEL: ${AI_MODEL}
+
+      # WhatsApp
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID}
+      WHATSAPP_BUSINESS_ACCOUNT_ID: ${WHATSAPP_BUSINESS_ACCOUNT_ID}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN}
+      WHATSAPP_WEBHOOK_TOKEN: ${WHATSAPP_WEBHOOK_TOKEN}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET}
+
+      # Email
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_SECURE: ${SMTP_SECURE}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      ALERT_EMAIL: ${ALERT_EMAIL}
+      ALERTS_ENABLED: ${ALERTS_ENABLED}
+
+      # Twilio
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN}
+      TWILIO_PHONE_NUMBER: ${TWILIO_PHONE_NUMBER}
+
+      # Google Calendar
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI}
+
+      # App
+      PORT: 3000
+      NODE_ENV: development
+      VITE_API_URL: http://localhost:3000
+      APP_URL: http://localhost:5173
+      HEALTH_CHECK_INTERVAL_MIN: 30
+
+      # Message Queue
+      REDIS_URL: redis://redis:6379
+      WORKER_CONCURRENCY: 50
+      DB_CONNECTION_LIMIT: 100
+
+      # Puppeteer
+      PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
+      PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: "true"
+
+      # Local development
+      ENVIRONMENT: local
+      LOG_LEVEL: debug
+      DEBUG: "waflow:*"
+
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./.wwebjs_auth:/app/.wwebjs_auth
+    networks:
+      - waflow-local
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  mysql_data_local:
+  redis_data_local:
+
+networks:
+  waflow-local:
+    driver: bridge

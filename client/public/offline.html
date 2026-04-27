@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WAFlow — Offline</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      min-height: 100dvh;
+      background: #030712;
+      color: #f9fafb;
+      font-family: system-ui, -apple-system, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      text-align: center;
+    }
+    .logo {
+      width: 64px; height: 64px;
+      background: #25D366;
+      border-radius: 16px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 32px;
+      margin-bottom: 24px;
+    }
+    h1 { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+    p { color: #9ca3af; font-size: 15px; line-height: 1.6; max-width: 300px; }
+    button {
+      margin-top: 28px;
+      padding: 12px 28px;
+      background: #25D366;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:active { opacity: 0.8; }
+  </style>
+</head>
+<body>
+  <div class="logo">⚡</div>
+  <h1>You're offline</h1>
+  <p>WAFlow needs a connection to your server. Please check your internet connection and try again.</p>
+  <button onclick="location.reload()">Try Again</button>
+</body>
+</html>

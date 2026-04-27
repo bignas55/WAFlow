@@ -1,0 +1,195 @@
+services:
+  # MySQL - Optimized for 1K users
+  mysql:
+    image: mysql:8.0.36
+    container_name: waflow-mysql-1k
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: waflow
+      MYSQL_USER: waflow
+      MYSQL_PASSWORD: waflowpassword
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data_1k:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: >
+      --default-authentication-plugin=mysql_native_password
+      --max-connections=1000
+      --max_allowed_packet=512M
+      --innodb-buffer-pool-size=4G
+      --innodb-log-file-size=1G
+      --innodb-flush-log-at-trx-commit=2
+      --tmp-table-size=256M
+      --max-heap-table-size=256M
+      --thread-cache-size=100
+      --table-open-cache=2000
+      --table-definition-cache=1000
+
+  # Redis - Optimized for message queue
+  redis:
+    image: redis:7.0-alpine
+    container_name: waflow-redis-1k
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data_1k:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: >
+      redis-server
+      --maxmemory 4gb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+      --appendfsync everysec
+      --tcp-backlog 512
+      --timeout 0
+      --tcp-keepalive 300
+
+  # WAFlow App 1
+  waflow-1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: waflow-app-1
+    working_dir: /app
+    environment:
+      DATABASE_URL: mysql://waflow:waflowpassword@mysql:3306/waflow
+      REDIS_URL: redis://redis:6379
+      NODE_ENV: production
+      PORT: 3000
+      WORKER_CONCURRENCY: 500
+      DB_CONNECTION_LIMIT: 500
+      NODE_OPTIONS: --max-old-space-size=4096
+      JWT_SECRET: ${JWT_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      AI_API_URL: ${AI_API_URL}
+      AI_API_KEY: ${AI_API_KEY}
+      AI_MODEL: ${AI_MODEL}
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./dist:/app/dist:ro
+      - ./node_modules:/app/node_modules:ro
+      - ./package.json:/app/package.json:ro
+      - waflow_uploads_1:/app/uploads
+      - waflow_auth_1:/app/.wwebjs_auth
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # WAFlow App 2
+  waflow-2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: waflow-app-2
+    working_dir: /app
+    environment:
+      DATABASE_URL: mysql://waflow:waflowpassword@mysql:3306/waflow
+      REDIS_URL: redis://redis:6379
+      NODE_ENV: production
+      PORT: 3001
+      WORKER_CONCURRENCY: 500
+      DB_CONNECTION_LIMIT: 500
+      NODE_OPTIONS: --max-old-space-size=4096
+      JWT_SECRET: ${JWT_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      AI_API_URL: ${AI_API_URL}
+      AI_API_KEY: ${AI_API_KEY}
+      AI_MODEL: ${AI_MODEL}
+    volumes:
+      - ./dist:/app/dist:ro
+      - ./node_modules:/app/node_modules:ro
+      - ./package.json:/app/package.json:ro
+      - waflow_uploads_2:/app/uploads
+      - waflow_auth_2:/app/.wwebjs_auth
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # WAFlow App 3
+  waflow-3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: waflow-app-3
+    working_dir: /app
+    environment:
+      DATABASE_URL: mysql://waflow:waflowpassword@mysql:3306/waflow
+      REDIS_URL: redis://redis:6379
+      NODE_ENV: production
+      PORT: 3002
+      WORKER_CONCURRENCY: 500
+      DB_CONNECTION_LIMIT: 500
+      NODE_OPTIONS: --max-old-space-size=4096
+      JWT_SECRET: ${JWT_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      AI_API_URL: ${AI_API_URL}
+      AI_API_KEY: ${AI_API_KEY}
+      AI_MODEL: ${AI_MODEL}
+    volumes:
+      - ./dist:/app/dist:ro
+      - ./node_modules:/app/node_modules:ro
+      - ./package.json:/app/package.json:ro
+      - waflow_uploads_3:/app/uploads
+      - waflow_auth_3:/app/.wwebjs_auth
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Nginx Load Balancer
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: waflow-lb-1k
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.1k.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - waflow-1
+      - waflow-2
+      - waflow-3
+    restart: unless-stopped
+
+volumes:
+  mysql_data_1k:
+  redis_data_1k:
+  waflow_uploads_1:
+  waflow_uploads_2:
+  waflow_uploads_3:
+  waflow_auth_1:
+  waflow_auth_2:
+  waflow_auth_3:

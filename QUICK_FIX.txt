@@ -1,0 +1,62 @@
+═══════════════════════════════════════════════════════════════════════
+  WAFlow Docker Quick Fix — Copy and paste these commands in Terminal
+═══════════════════════════════════════════════════════════════════════
+
+STEP 1: Go to project directory
+────────────────────────────────
+cd ~/Documents/v2
+
+
+STEP 2: Make script executable
+──────────────────────────────
+chmod +x diagnose-and-fix.sh
+
+
+STEP 3: Run diagnostic and fix script
+──────────────────────────────────────
+./diagnose-and-fix.sh
+
+
+STEP 4: Wait 30 seconds, then check status
+────────────────────────────────────────────
+docker-compose -f docker-compose.1k-users.yml ps
+
+
+STEP 5: View logs if containers aren't starting
+──────────────────────────────────────────────
+docker-compose -f docker-compose.1k-users.yml logs waflow-1
+
+
+STEP 6: Test the system
+──────────────────────
+curl http://localhost:3000/health
+open http://localhost
+
+
+═══════════════════════════════════════════════════════════════════════
+  If something goes wrong, check DEPLOYMENT_STATUS.md for troubleshooting
+═══════════════════════════════════════════════════════════════════════
+
+Expected Result After Fix:
+──────────────────────────
+✅ waflow-1 container: Up
+✅ waflow-2 container: Up
+✅ waflow-3 container: Up
+✅ nginx load balancer: Up (healthy)
+✅ MySQL database: Up (healthy)
+✅ Redis cache: Up (healthy)
+
+Admin Access:
+─────────────
+URL: http://localhost
+Email: admin@waflow.com
+Password: admin123
+
+What Just Happened:
+───────────────────
+1. Fixed TypeScript compilation errors in db.ts and cacheService.ts
+2. Rebuilt server code (93 compiled files)
+3. Removed Docker container restart loop
+4. Recreated containers with fresh build
+5. Verified database and cache health
+6. Ready for WhatsApp QR code setup

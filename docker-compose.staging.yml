@@ -1,0 +1,201 @@
+version: '3.8'
+
+services:
+  # MySQL Database - Staging optimized
+  mysql:
+    image: mysql:8.0.36
+    container_name: waflow-mysql-staging
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data_staging:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - waflow-staging
+    command: >
+      --default-authentication-plugin=mysql_native_password
+      --max-connections=500
+      --max_allowed_packet=256M
+      --innodb-buffer-pool-size=2G
+      --innodb-log-file-size=512M
+
+  # Redis - Message queue & caching for staging
+  redis:
+    image: redis:7.0-alpine
+    container_name: waflow-redis-staging
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data_staging:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - waflow-staging
+    command: >
+      redis-server
+      --maxmemory 2gb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+
+  # WAFlow Application - Staging
+  waflow:
+    build:
+      context: .
+      dockerfile: Dockerfile.staging
+    container_name: waflow-app-staging
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Database
+      DATABASE_URL: ${DATABASE_URL}
+      DB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+
+      # Auth
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
+
+      # Encryption
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+
+      # AI Configuration
+      AI_API_URL: ${AI_API_URL}
+      AI_API_KEY: ${AI_API_KEY}
+      AI_MODEL: ${AI_MODEL}
+
+      # WhatsApp
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID}
+      WHATSAPP_BUSINESS_ACCOUNT_ID: ${WHATSAPP_BUSINESS_ACCOUNT_ID}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN}
+      WHATSAPP_WEBHOOK_TOKEN: ${WHATSAPP_WEBHOOK_TOKEN}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET}
+
+      # Email
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_SECURE: ${SMTP_SECURE}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      ALERT_EMAIL: ${ALERT_EMAIL}
+      ALERTS_ENABLED: ${ALERTS_ENABLED}
+
+      # Twilio
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN}
+      TWILIO_PHONE_NUMBER: ${TWILIO_PHONE_NUMBER}
+
+      # Google Calendar
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI}
+
+      # App
+      PORT: 3000
+      NODE_ENV: production
+      VITE_API_URL: ${VITE_API_URL}
+      APP_URL: ${APP_URL}
+      HEALTH_CHECK_INTERVAL_MIN: 30
+
+      # Message Queue
+      REDIS_URL: redis://redis:6379
+      WORKER_CONCURRENCY: 200
+      DB_CONNECTION_LIMIT: 300
+
+      # Puppeteer
+      PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
+      PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: "true"
+
+      # Staging-specific
+      ENVIRONMENT: staging
+      LOG_LEVEL: debug
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./.wwebjs_auth:/app/.wwebjs_auth
+    networks:
+      - waflow-staging
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # Nginx Reverse Proxy - SSL termination & load balancing
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: waflow-nginx-staging
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl/certs:/etc/nginx/certs:ro
+      - ./nginx-logs:/var/log/nginx
+    depends_on:
+      - waflow
+    networks:
+      - waflow-staging
+    restart: unless-stopped
+
+  # Prometheus - Metrics collection
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: waflow-prometheus-staging
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data_staging:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - waflow-staging
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+    restart: unless-stopped
+
+  # Grafana - Metrics visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: waflow-grafana-staging
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+      GF_SECURITY_ADMIN_USER: admin
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana_data_staging:/var/lib/grafana
+    networks:
+      - waflow-staging
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  mysql_data_staging:
+  redis_data_staging:
+  prometheus_data_staging:
+  grafana_data_staging:
+
+networks:
+  waflow-staging:
+    driver: bridge

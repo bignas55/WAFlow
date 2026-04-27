@@ -1,0 +1,108 @@
+[
+  {
+    "id": "5utkh2",
+    "name": "Welcome Flow",
+    "trigger": "hello",
+    "nodes": [
+      {
+        "id": "n1",
+        "type": "message",
+        "label": "Greeting",
+        "content": "Welcome! How can I help you today?",
+        "next": "n2",
+        "x": 0,
+        "y": 0
+      },
+      {
+        "id": "n2",
+        "type": "condition",
+        "label": "Check keyword",
+        "conditionKey": "message",
+        "conditionValue": "support",
+        "trueNext": "n3",
+        "falseNext": "n4",
+        "x": 0,
+        "y": 1
+      },
+      {
+        "id": "n3",
+        "type": "escalate",
+        "label": "Escalate to Agent",
+        "x": -1,
+        "y": 2
+      },
+      {
+        "id": "n4",
+        "type": "ai_reply",
+        "label": "AI handles",
+        "next": "n5",
+        "x": 1,
+        "y": 2
+      },
+      {
+        "id": "n5",
+        "type": "end",
+        "label": "End Flow",
+        "x": 1,
+        "y": 3
+      }
+    ],
+    "isActive": false,
+    "createdAt": "2026-04-05T11:06:07.475Z",
+    "tenantId": 1,
+    "updatedAt": "2026-04-05T11:07:50.018Z"
+  },
+  {
+    "id": "r7rslh",
+    "name": "Welcome Flow",
+    "trigger": "hello",
+    "nodes": [
+      {
+        "id": "n1",
+        "type": "message",
+        "label": "Greeting",
+        "content": "Welcome! How can I help you today?",
+        "next": "n2",
+        "x": 0,
+        "y": 0
+      },
+      {
+        "id": "n2",
+        "type": "condition",
+        "label": "Check keyword",
+        "conditionKey": "message",
+        "conditionValue": "support",
+        "trueNext": "n3",
+        "falseNext": "n4",
+        "x": 0,
+        "y": 1
+      },
+      {
+        "id": "n3",
+        "type": "escalate",
+        "label": "Escalate to Agent",
+        "x": -1,
+        "y": 2
+      },
+      {
+        "id": "n4",
+        "type": "ai_reply",
+        "label": "AI handles",
+        "next": "n5",
+        "x": 1,
+        "y": 2
+      },
+      {
+        "id": "n5",
+        "type": "end",
+        "label": "End Flow",
+        "x": 1,
+        "y": 3
+      }
+    ],
+    "isActive": false,
+    "createdAt": "2026-04-05T16:36:36.675Z",
+    "tenantId": 10,
+    "updatedAt": "2026-04-05T16:37:42.583Z"
+  }
+]

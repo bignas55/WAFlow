@@ -1,0 +1,20 @@
+{
+  "IT-2026-00001": {
+    "ticketId": "IT-2026-00001",
+    "tenantId": 1,
+    "phoneNumber": "150852404793537",
+    "userName": "Nathan",
+    "category": "other",
+    "answers": {
+      "description": "Hi",
+      "duration": "A",
+      "work_impact": "Yes"
+    },
+    "diagnosis": "** It looks like there might be a temporary glitch affecting how your device is working. Sometimes these things just need a little refresh to get back on track.\n\n2. **",
+    "suggestedFix": "**\n   1.  Let’s try restarting your device – just like restarting your phone!\n   2.  Could you take a quick screenshot of what you're seeing and send it to me?\n   3.  Note down exactly when this started happening.\n   4.  Let me know if restarting helps, or if you see any messages after you restart.\n   5.  I’ll be in touch shortly to continue investigating this with you.",
+    "priority": "high",
+    "status": "resolved",
+    "createdAt": "2026-04-13T15:56:22.844Z",
+    "resolvedAt": "2026-04-13T15:57:03.082Z"
+  }
+}

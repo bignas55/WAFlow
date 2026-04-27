@@ -1,0 +1,48 @@
+# ── WAFlow .dockerignore ─────────────────────────────────────────────────────
+# Keeps the Docker build context lean, fast, and secure.
+
+# Dependencies (installed fresh inside the image)
+node_modules
+.pnpm-store
+
+# Environment secrets (NEVER bake .env into an image)
+.env
+.env.local
+.env.*.local
+
+# WhatsApp sessions (mounted as a named volume at runtime)
+.wwebjs_auth
+
+# User uploads (mounted as a named volume at runtime)
+uploads
+
+# Build artifacts - DO NOT IGNORE, we copy pre-built dist into image
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Logs
+*.log
+logs/
+
+# Editor / OS
+.DS_Store
+.idea
+.vscode
+*.swp
+*.swo
+
+# Large backup archives
+*.zip
+*.tar.gz
+
+# Test / dev tooling
+coverage
+.nyc_output
+vitest.config.ts
+
+# Scripts only needed on the host
+deploy/deploy.sh
+deploy/setup-server.sh

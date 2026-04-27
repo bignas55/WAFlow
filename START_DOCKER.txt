@@ -1,0 +1,87 @@
+═══════════════════════════════════════════════════════════════════════════════
+  WAFlow Docker Quick Start — Copy and paste these 3 commands
+═══════════════════════════════════════════════════════════════════════════════
+
+Make the script executable:
+────────────────────────────
+chmod +x setup-docker.sh
+
+
+Run the setup script (this generates security keys and starts containers):
+──────────────────────────────────────────────────────────────────────────
+./setup-docker.sh
+
+
+Wait ~30 seconds, then check if all containers are running:
+────────────────────────────────────────────────────────────
+docker-compose -f docker-compose.1k-users.yml ps
+
+
+═══════════════════════════════════════════════════════════════════════════════
+  What setup-docker.sh Does
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Generates random JWT_SECRET (64 chars) - for auth security
+2. Generates random ENCRYPTION_KEY (32 bytes) - for database encryption
+3. Sets AI_API_URL to local Ollama (http://host.docker.internal:11434/v1)
+4. Stops any running containers
+5. Starts fresh containers with proper environment variables
+6. Waits for MySQL to become healthy
+7. Shows container status and next steps
+
+═══════════════════════════════════════════════════════════════════════════════
+  After Setup Completes
+═══════════════════════════════════════════════════════════════════════════════
+
+If all containers show "Up":
+
+Run database migrations:
+  npm run drizzle:migrate
+
+Seed admin user and templates:
+  npm run db:seed
+
+Access admin dashboard:
+  http://localhost
+  Email: admin@waflow.com
+  Password: admin123
+
+═══════════════════════════════════════════════════════════════════════════════
+  Troubleshooting
+═══════════════════════════════════════════════════════════════════════════════
+
+If containers don't start:
+
+Check logs:
+  docker-compose -f docker-compose.1k-users.yml logs waflow-1 --tail 100
+
+Watch logs in real-time:
+  docker-compose -f docker-compose.1k-users.yml logs -f waflow-1
+
+Restart containers:
+  docker-compose -f docker-compose.1k-users.yml restart
+
+Reset everything (WARNING: deletes data):
+  docker-compose -f docker-compose.1k-users.yml down -v
+  ./setup-docker.sh
+
+═══════════════════════════════════════════════════════════════════════════════
+  To Use Your Own AI API Instead of Ollama
+═══════════════════════════════════════════════════════════════════════════════
+
+Before running setup-docker.sh, set these environment variables:
+
+For OpenAI:
+  export AI_API_URL="https://api.openai.com/v1"
+  export AI_API_KEY="sk-your-api-key-here"
+  export AI_MODEL="gpt-3.5-turbo"
+
+For Groq:
+  export AI_API_URL="https://api.groq.com/openai/v1"
+  export AI_API_KEY="your-groq-api-key"
+  export AI_MODEL="mixtral-8x7b-32768"
+
+Then run:
+  ./setup-docker.sh
+
+═══════════════════════════════════════════════════════════════════════════════

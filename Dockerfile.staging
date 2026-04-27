@@ -1,0 +1,43 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# WAFlow Staging Dockerfile - Alpine Multi-stage
+# ─────────────────────────────────────────────────────────────────────────────
+
+FROM node:20-alpine as builder
+
+WORKDIR /build
+
+RUN apk add --no-cache python3 make g++
+
+COPY package.json pnpm-lock.yaml ./
+
+RUN npm install -g pnpm@8.15.0 && pnpm install --frozen-lockfile
+
+COPY . .
+
+RUN pnpm run build
+
+# ─────────────────────────────────────────────────────────────────────────────
+FROM node:20-alpine
+
+WORKDIR /app
+
+RUN apk add --no-cache curl wget ca-certificates
+
+# Copy from builder
+COPY --from=builder /build/node_modules ./node_modules
+COPY --from=builder /build/dist ./dist
+COPY --from=builder /build/drizzle ./drizzle
+COPY --from=builder /build/package.json ./package.json
+
+# Copy config
+COPY drizzle.config.ts ./
+COPY shared ./shared
+
+RUN mkdir -p /app/uploads /app/.wwebjs_auth
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:3000/health || exit 1
+
+EXPOSE 3000
+
+CMD ["node", "dist/server/index.js"]

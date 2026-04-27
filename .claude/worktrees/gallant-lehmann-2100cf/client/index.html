@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+
+    <!-- ── Primary meta ──────────────────────────────────────────────── -->
+    <title>WAFlow — AI WhatsApp Receptionist for Your Business</title>
+    <meta name="description" content="WAFlow turns your WhatsApp number into a 24/7 AI receptionist. Automate bookings, answer questions, run campaigns, and grow your business — no code required." />
+    <meta name="keywords" content="WhatsApp AI, WhatsApp receptionist, WhatsApp automation, appointment booking WhatsApp, WhatsApp bot, AI customer service, South Africa" />
+    <meta name="author" content="WAFlow" />
+    <meta name="theme-color" content="#25D366" />
+    <meta name="robots" content="index, follow" />
+
+    <!-- ── PWA manifest ───────────────────────────────────────────────── -->
+    <link rel="manifest" href="/manifest.json" />
+
+    <!-- ── Favicon ────────────────────────────────────────────────────── -->
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="96x96"   href="/icons/icon-96x96.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192x192.png" />
+
+    <!-- ── iOS / Safari PWA ──────────────────────────────────────────── -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="WAFlow" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+
+    <!-- ── Microsoft Tiles ───────────────────────────────────────────── -->
+    <meta name="msapplication-TileImage" content="/icons/icon-144x144.png" />
+    <meta name="msapplication-TileColor" content="#25D366" />
+
+    <!-- ── Open Graph ────────────────────────────────────────────────── -->
+    <meta property="og:title" content="WAFlow — AI WhatsApp Receptionist for Your Business" />
+    <meta property="og:description" content="Turn your WhatsApp into a 24/7 AI receptionist. Automate bookings, answer questions, and grow — all via WhatsApp." />
+    <meta property="og:image" content="/icons/icon-512x512.png" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://waflow.co.za" />
+    <meta property="og:site_name" content="WAFlow" />
+    <!-- ── Twitter Card ───────────────────────────────────────────────── -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="WAFlow — AI WhatsApp Receptionist" />
+    <meta name="twitter:description" content="Automate your WhatsApp business: bookings, customer service, campaigns — 24/7, powered by AI." />
+    <meta name="twitter:image" content="/icons/icon-512x512.png" />
+
+    <!-- ── Service Worker ────────────────────────────────────────────── -->
+    <script>
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register("/sw.js", { scope: "/" })
+            .then((reg) => {
+              reg.addEventListener("updatefound", () => {
+                const nw = reg.installing;
+                if (!nw) return;
+                nw.addEventListener("statechange", () => {
+                  if (nw.state === "installed" && navigator.serviceWorker.controller) {
+                    nw.postMessage({ type: "SKIP_WAITING" });
+                  }
+                });
+              });
+            })
+            .catch((e) => console.warn("[SW] Registration failed:", e));
+
+          navigator.serviceWorker.addEventListener("controllerchange", () => {
+            window.location.reload();
+          });
+        });
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,44 @@
+═══════════════════════════════════════════════════════════════════════
+  Check Container Logs — Copy and paste ONE of these commands
+═══════════════════════════════════════════════════════════════════════
+
+Run this first to see what's preventing containers from starting:
+
+docker-compose -f docker-compose.1k-users.yml logs waflow-1 --tail 100
+
+
+If that doesn't show enough, try:
+
+docker-compose -f docker-compose.1k-users.yml logs waflow-app-1 --tail 200
+
+
+To see MySQL/Redis status (they should be healthy):
+
+docker-compose -f docker-compose.1k-users.yml logs mysql --tail 50
+docker-compose -f docker-compose.1k-users.yml logs redis --tail 50
+
+
+To watch logs in real-time as containers try to start:
+
+docker-compose -f docker-compose.1k-users.yml logs -f waflow-1
+
+
+═══════════════════════════════════════════════════════════════════════
+  Current Status
+═══════════════════════════════════════════════════════════════════════
+
+The diagnostic script ran but:
+- waflow-1, waflow-2, waflow-3 are NOT starting
+- MySQL and Redis should be healthy
+- Health endpoint not responding
+
+Next: Run the log command above and share the output. The error message
+will show exactly what's preventing startup.
+
+Common issues:
+1. Port already in use (3000, 80)
+2. Environment variables not set
+3. Database migration needed
+4. Dependency missing
+
+═══════════════════════════════════════════════════════════════════════

@@ -1,0 +1,31 @@
+═══════════════════════════════════════════════════════════════════════════════
+  🔧 DIRECT BUILD FIX - TypeScript Compiler Explicitly Called
+═══════════════════════════════════════════════════════════════════════════════
+
+What Changed:
+  ✅ Removed pnpm build script dependency
+  ✅ Directly call TypeScript compiler: pnpm exec tsc
+  ✅ Directly call Vite: pnpm exec vite build
+  ✅ Verify dist exists with test command
+  ✅ Show actual errors if build fails
+
+This will show EXACT error messages if compilation fails.
+
+═══════════════════════════════════════════════════════════════════════════════
+  🚀 REBUILD:
+═══════════════════════════════════════════════════════════════════════════════
+
+chmod +x rebuild-and-start-fixed.sh && ./rebuild-and-start-fixed.sh
+
+═══════════════════════════════════════════════════════════════════════════════
+  Watch Build Output:
+═══════════════════════════════════════════════════════════════════════════════
+
+In another terminal, run:
+  docker-compose -f docker-compose.1k-users.yml logs -f
+
+This will show all error messages during the build.
+
+If build fails, you'll see the exact TypeScript or Vite error.
+
+═══════════════════════════════════════════════════════════════════════════════

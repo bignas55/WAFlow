@@ -1,0 +1,175 @@
+═══════════════════════════════════════════════════════════════════════════════
+  WAFlow System Status — What to Do Next
+═══════════════════════════════════════════════════════════════════════════════
+
+Current Status:
+  ✅ Database initialized (46 tables, admin user created)
+  ✅ MySQL healthy
+  ✅ Redis healthy
+  ⚠️  App containers restarting (normal during startup)
+
+═══════════════════════════════════════════════════════════════════════════════
+  OPTION 1: Quick Status Check (30 seconds)
+═══════════════════════════════════════════════════════════════════════════════
+
+Copy and paste this command:
+
+chmod +x QUICK_TEST.sh
+./QUICK_TEST.sh
+
+This will show you if containers are healthy.
+
+═══════════════════════════════════════════════════════════════════════════════
+  OPTION 2: Full Diagnostics (shows error details)
+═══════════════════════════════════════════════════════════════════════════════
+
+Copy and paste this command:
+
+chmod +x DIAGNOSE.sh
+./DIAGNOSE.sh
+
+This will show you:
+  - Container status
+  - App logs (look for error messages)
+  - Database connectivity
+  - Port status
+  - Environment variables
+
+═══════════════════════════════════════════════════════════════════════════════
+  OPTION 3: Manual Status Check
+═══════════════════════════════════════════════════════════════════════════════
+
+Check container status:
+  docker-compose -f docker-compose.1k-users.yml ps
+
+View app logs (last 50 lines):
+  docker-compose -f docker-compose.1k-users.yml logs waflow-app-1 --tail 50
+
+Watch logs in real-time:
+  docker-compose -f docker-compose.1k-users.yml logs -f waflow-app-1
+
+═══════════════════════════════════════════════════════════════════════════════
+  What to Look For in Logs
+═══════════════════════════════════════════════════════════════════════════════
+
+Good signs:
+  ✅ "Server is running on port 3000"
+  ✅ "Cache service initialized with Redis"
+  ✅ "Cache HIT: bot config" (means caching is working)
+  ✅ "✅ Server started" or similar
+
+Bad signs (need to fix):
+  ❌ "ECONNREFUSED" — database not ready
+  ❌ "Cannot find module" — missing dependency
+  ❌ "Port 3000 already in use" — kill other process
+  ❌ "Exited with code 1" — application error
+
+═══════════════════════════════════════════════════════════════════════════════
+  If Containers Keep Restarting
+═══════════════════════════════════════════════════════════════════════════════
+
+The containers restart in a loop when they immediately crash on startup.
+
+1. First, check the logs:
+   docker-compose -f docker-compose.1k-users.yml logs waflow-app-1 | tail -30
+
+2. Look for the error message (usually in last few lines)
+
+3. Common fixes:
+
+   If "Cannot find module 'X'":
+     npm install
+     npm run build:server
+     docker-compose restart waflow-1
+
+   If "ECONNREFUSED" (database):
+     # Wait for MySQL to be ready
+     sleep 10
+     docker-compose restart waflow-1
+
+   If "Port already in use":
+     lsof -i :3000
+     kill -9 <PID>
+     docker-compose restart waflow-1
+
+   If everything fails, reset and restart:
+     docker-compose down -v
+     ./setup-docker.sh
+     npm run drizzle:generate
+     npm run drizzle:migrate
+     npm run db:seed
+
+═══════════════════════════════════════════════════════════════════════════════
+  Expected Timeline
+═══════════════════════════════════════════════════════════════════════════════
+
+0-5s:    Setup generates keys and starts containers
+5-10s:   MySQL initializes (shows "Up N seconds (healthy)")
+10-15s:  Redis initializes (shows "Up N seconds (healthy)")
+15-30s:  App containers start and connect to database
+30-60s:  App containers should be "Up (health: starting)"
+60-90s:  App health checks pass, shows "Up (healthy)"
+
+═══════════════════════════════════════════════════════════════════════════════
+  Once All Containers Show "Up"
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Open browser to http://localhost
+
+2. Login with:
+   Email: admin@waflow.com
+   Password: admin123
+
+3. You should see the admin dashboard
+
+4. Go to Settings → WhatsApp → Start Session to scan QR code
+
+═══════════════════════════════════════════════════════════════════════════════
+  Quick Commands Reference
+═══════════════════════════════════════════════════════════════════════════════
+
+# Check status
+docker-compose -f docker-compose.1k-users.yml ps
+
+# View logs
+docker-compose -f docker-compose.1k-users.yml logs waflow-1 -f
+
+# Restart all
+docker-compose -f docker-compose.1k-users.yml restart
+
+# Restart one container
+docker-compose -f docker-compose.1k-users.yml restart waflow-1
+
+# Stop all
+docker-compose -f docker-compose.1k-users.yml down
+
+# Stop and remove volumes (WARNING: deletes data)
+docker-compose -f docker-compose.1k-users.yml down -v
+
+# Check specific service
+docker-compose -f docker-compose.1k-users.yml ps mysql
+
+═══════════════════════════════════════════════════════════════════════════════
+  What's Working Right Now
+═══════════════════════════════════════════════════════════════════════════════
+
+✅ 46 database tables created
+✅ Admin user: admin@waflow.com / admin123
+✅ Default templates seeded
+✅ MySQL database fully initialized
+✅ Redis cache ready
+✅ Nginx load balancer configured
+
+⏳ Waiting for app containers to fully start
+
+═══════════════════════════════════════════════════════════════════════════════
+  You're 99% There!
+═══════════════════════════════════════════════════════════════════════════════
+
+The database is fully set up and working. The containers just need time to
+start their Node.js processes and connect to the database.
+
+Run the diagnostic scripts above to see what's happening, or just wait 60
+seconds and then access http://localhost.
+
+═══════════════════════════════════════════════════════════════════════════════

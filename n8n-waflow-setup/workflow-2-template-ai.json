@@ -1,0 +1,105 @@
+{
+  "name": "[2] Template & AI Response Generator",
+  "nodes": [
+    {
+      "parameters": {
+        "triggerData": {
+          "value": {
+            "tenantId": 2,
+            "phone": "1234567890",
+            "text": "What are your hours?",
+            "messageId": "msg123",
+            "timestamp": 1683000000
+          }
+        }
+      },
+      "id": "workflow_trigger",
+      "name": "Trigger from Webhook Receiver",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "query": "SELECT * FROM bot_config WHERE tenant_id = {{$node['workflow_trigger'].json.tenantId}}"
+      },
+      "id": "get_bot_config",
+      "name": "Get Bot Config",
+      "type": "n8n-nodes-base.mysqldb",
+      "typeVersion": 2,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "javaScriptCode": "// Check if within business hours\nconst config = $node['get_bot_config'].json[0];\nconst hoursEnabled = config.business_hours_enabled;\nconst timezone = config.business_hours_timezone || 'UTC';\nconst startTime = config.business_hours_start;\nconst endTime = config.business_hours_end;\nconst afterHoursMsg = config.after_hours_message || 'Sorry, we\\'re closed now. Please reach out during business hours.';\n\nif (!hoursEnabled) {\n  return { isBusinessHours: true };\n}\n\n// Simple hour check (simplified, real implementation would use timezone)\nconst now = new Date();\nconst currentHour = now.getHours();\nconst [startHour] = startTime.split(':').map(Number);\nconst [endHour] = endTime.split(':').map(Number);\n\nconst isWithinHours = currentHour >= startHour && currentHour < endHour;\nreturn { isBusinessHours: isWithinHours, afterHoursMsg };"
+      },
+      "id": "check_business_hours",
+      "name": "Check Business Hours",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "any": [
+            {
+              "value1": "={{ $node['check_business_hours'].json.isBusinessHours }}",
+              "value2": false,
+              "operation": "equals"
+            }
+          ]
+        }
+      },
+      "id": "is_closed",
+      "name": "Is Closed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        700,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "query": "SELECT id, trigger_keywords, response_text, priority FROM templates WHERE tenant_id = {{$node['workflow_trigger'].json.tenantId}} AND enabled = true ORDER BY priority DESC"
+      },
+      "id": "get_templates",
+      "name": "Get Active Templates",
+      "type": "n8n-nodes-base.mysqldb",
+      "typeVersion": 2,
+      "position": [
+        700,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "javaScriptCode": "// Match incoming text against template triggers\nconst text = $node['workflow_trigger'].json.text.toLowerCase();\nconst templates = $node['get_templates'].json;\n\nfor (const template of templates) {\n  const keywords = JSON.parse(template.trigger_keywords);\n  const matched = keywords.some(keyword => text.includes(keyword.toLowerCase()));\n  \n  if (matched) {\n    return {\n      templateMatched: true,\n      templateId: template.id,\n      responseText: template.response_text,\n      priority: template.priority\n    };\n  }\n}\n\nreturn { templateMatched: false };"
+      },
+      "id": "match_templates",
+      "name": "Match Templates",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        900,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "any": [
+            {\n              \"value1\": \"={{ $node['match_templates'].json.templateMatched }}\",\n              \"value2\": true,\n              \"operation\": \"equals\"\n            }\n          ]\n        }\n      },
+      "id": "template_found",
+      "name": "Template Found?\",
+      "type": "n8n-nodes-base.if",\n      "typeVersion": 1,\n      "position": [\n        1100,\n        400\n      ]\n    },\n    {\n      \"parameters\": {\n        \"query\": \"SELECT kb.id, kb.title, kb.content FROM knowledge_base kb WHERE kb.tenant_id = {{$node['workflow_trigger'].json.tenantId}} AND kb.enabled = true LIMIT 5\"\n      },\n      \"id\": \"get_kb_articles\",\n      \"name\": \"Get Knowledge Base Articles\",\n      \"type\": \"n8n-nodes-base.mysqldb\",\n      \"typeVersion\": 2,\n      \"position\": [\n        1100,\n        650\n      ]\n    },\n    {\n      \"parameters\": {\n        \"javaScriptCode\": \"// Build knowledge base context for AI\nconst articles = $node['get_kb_articles'].json;\nconst kbContext = articles.map(a => `Title: ${a.title}\\nContent: ${a.content}`).join('\\n\\n');\n\nreturn {\n  kbContext: kbContext || 'No knowledge base articles available',\n  articleCount: articles.length\n};\"\n      },\n      \"id\": \"build_kb_context\",\n      \"name\": \"Build KB Context\",\n      \"type\": \"n8n-nodes-base.function\",\n      \"typeVersion\": 1,\n      \"position\": [\n        1300,\n        650\n      ]\n    },\n    {\n      \"parameters\": {\n        \"authentication\": \"genericCredentialType\",\n        \"genericAuthType\": \"httpHeaderAuth\",\n        \"sendHeaders\": true,\n        \"headerParameters\": {\n          \"parameters\": [\n            {\n              \"name\": \"Authorization\",\n              \"value\": \"Bearer {{env.GROQ_API_KEY}}\"\n            }\n          ]\n        },\n        \"method\": \"POST\",\n        \"url\": \"https://api.groq.com/openai/v1/chat/completions\",\n        \"sendBody\": true,\n        \"bodyParametersJson\": \"={\\n  \\\"model\\\": \\\"{{env.GROQ_MODEL}}\\\",\\n  \\\"messages\\\": [\\n    {\\n      \\\"role\\\": \\\"system\\\",\\n      \\\"content\\\": \\\"You are a helpful customer service AI assistant. Answer questions based on the provided context. Be concise and friendly.\\\"\\n    },\\n    {\\n      \\\"role\\\": \\\"user\\\",\\n      \\\"content\\\": \\\"Context: {{$node['build_kb_context'].json.kbContext}}\\n\\nCustomer question: {{$node['workflow_trigger'].json.text}}\\\"\\n    }\\n  ],\\n  \\\"temperature\\\": 0.7,\\n  \\\"max_tokens\\\": 500\\n}\"\n      },\n      \"id\": \"call_groq_api\",\n      \"name\": \"Call Groq API\",\n      \"type\": \"n8n-nodes-base.httpRequest\",\n      \"typeVersion\": 4.1,\n      \"position\": [\n        1500,\n        650\n      ]\n    },\n    {\n      \"parameters\": {\n        \"javaScriptCode\": \"// Extract AI response and analyze sentiment\nconst response = $node['call_groq_api'].json;\nconst content = response.choices[0].message.content;\nconst tokens = response.usage.completion_tokens;\n\n// Simple sentiment analysis\nconst negativeWords = ['angry', 'frustrated', 'upset', 'terrible', 'worst', 'hate', 'problem', 'issue', 'broken', 'not working'];\nconst positiveWords = ['great', 'excellent', 'happy', 'satisfied', 'thank', 'appreciate', 'love', 'perfect'];\n\nconst negativeCount = negativeWords.filter(word => content.toLowerCase().includes(word)).length;\nconst positiveCount = positiveWords.filter(word => content.toLowerCase().includes(word)).length;\n\nlet sentiment = 'neutral';\nif (negativeCount > positiveCount) sentiment = 'negative';\nelse if (positiveCount > negativeCount) sentiment = 'positive';\n\nreturn {\n  aiResponse: content,\n  tokens,\n  sentiment,\n  shouldEscalate: sentiment === 'negative'\n};\"\n      },\n      \"id\": \"analyze_sentiment\",\n      \"name\": \"Analyze Sentiment\",\n      \"type\": \"n8n-nodes-base.function\",\n      \"typeVersion\": 1,\n      \"position\": [\n        1700,\n        650\n      ]\n    },\n    {\n      \"parameters\": {\n        \"query\": \"INSERT INTO conversations (tenant_id, phone, direction, message_type, content, source, sentiment, ai_used, created_at) VALUES ({{$node['workflow_trigger'].json.tenantId}}, '{{$node['workflow_trigger'].json.phone}}', 'outbound', 'text', ?, 'ai', '{{$node['analyze_sentiment'].json.sentiment}}', true, NOW())\",\n        \"parameterized\": true,\n        \"parameters\": [\n          \"={{$node['analyze_sentiment'].json.aiResponse}}\"\n        ]\n      },\n      \"id\": \"store_conversation\",\n      \"name\": \"Store Conversation\",\n      \"type\": \"n8n-nodes-base.mysqldb\",\n      \"typeVersion\": 2,\n      \"position\": [\n        1900,\n        650\n      ]\n    },\n    {\n      \"parameters\": {\n        \"query\": \"UPDATE customers SET message_count = message_count + 1, last_message_at = NOW() WHERE tenant_id = {{$node['workflow_trigger'].json.tenantId}} AND phone = '{{$node['workflow_trigger'].json.phone}}' ON DUPLICATE KEY UPDATE message_count = message_count + 1\"\n      },\n      \"id\": \"update_customer\",\n      \"name\": \"Update Customer Record\",\n      \"type\": \"n8n-nodes-base.mysqldb\",\n      \"typeVersion\": 2,\n      \"position\": [\n        2100,\n        650\n      ]\n    },\n    {\n      \"parameters\": {\n        \"query\": \"UPDATE conversations SET content = ? WHERE tenant_id = {{$node['workflow_trigger'].json.tenantId}} AND phone = '{{$node['workflow_trigger'].json.phone}}' AND direction = 'inbound' ORDER BY created_at DESC LIMIT 1\",\n        \"parameterized\": true,\n        \"parameters\": [\n          \"={{$node['match_templates'].json.responseText || $node['analyze_sentiment'].json.aiResponse}}\"\n        ]\n      },\n      \"id\": \"send_response\",\n      \"name\": \"Send WhatsApp Response\",\n      \"type\": \"n8n-nodes-base.mysqldb\",\n      \"typeVersion\": 2,\n      \"position\": [\n        2300,\n        650\n      ]\n    },\n    {\n      \"parameters\": {\n        \"javaScriptCode\": \"return {\n  success: true,\n  templateUsed: $node['template_found'].json.executed ? true : false,\n  aiUsed: !$node['template_found'].json.executed,\n  sentiment: $node['analyze_sentiment'].json?.sentiment || 'neutral',\n  escalated: $node['analyze_sentiment'].json?.shouldEscalate || false\n};\"\n      },\n      \"id\": \"final_response\",\n      \"name\": \"Final Response\",\n      \"type\": \"n8n-nodes-base.function\",\n      \"typeVersion\": 1,\n      \"position\": [\n        2500,\n        650\n      ]\n    },\n    {\n      \"parameters\": {\n        \"method\": \"POST\",\n        \"url\": \"http://localhost:5678/webhook/escalate\",\n        \"sendBody\": true,\n        \"bodyParametersJson\": \"={\\n  \\\"tenantId\\\": {{$node['workflow_trigger'].json.tenantId}},\\n  \\\"phone\\\": \\\"{{$node['workflow_trigger'].json.phone}}\\\",\\n  \\\"reason\\\": \\\"Negative sentiment detected\\\",\\n  \\\"sentiment\\\": \\\"{{$node['analyze_sentiment'].json.sentiment}}\\\"\\n}\"\n      },\n      \"id\": \"escalate_webhook\",\n      \"name\": \"Trigger Escalation\",\n      \"type\": \"n8n-nodes-base.httpRequest\",\n      \"typeVersion\": 4.1,\n      \"position\": [\n        2100,\n        900\n      ]\n    }\n  ],\n  \"connections\": {\n    \"workflow_trigger\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"get_bot_config\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"get_bot_config\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"check_business_hours\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"check_business_hours\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"is_closed\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"is_closed\": {\n      \"main\": [\n        [],\n        [\n          {\n            \"node\": \"get_templates\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"get_templates\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"match_templates\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"match_templates\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"template_found\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"template_found\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"send_response\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ],\n        [\n          {\n            \"node\": \"get_kb_articles\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"get_kb_articles\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"build_kb_context\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"build_kb_context\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"call_groq_api\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"call_groq_api\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"analyze_sentiment\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"analyze_sentiment\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"store_conversation\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"store_conversation\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"update_customer\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"update_customer\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"send_response\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"send_response\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"final_response\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"final_response\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"escalate_webhook\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    }\n  },\n  \"active\": true,\n  \"settings\": {},\n  \"versionId\": \"9f1d8c2e-6d2e-5e9d-9f0e-4d6e8f9g0b1c\"\n}\n

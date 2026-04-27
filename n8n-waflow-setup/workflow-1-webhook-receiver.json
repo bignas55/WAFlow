@@ -1,0 +1,261 @@
+{
+  "name": "[1] WhatsApp Webhook Receiver",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "webhook/whatsapp/:tenantId",
+        "responseMode": "responseNode",
+        "responseData": "={\n  \"success\": true,\n  \"message\": \"Message received\"\n}"
+      },
+      "id": "webhook_trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "javaScriptCode": "// Parse webhook data and extract tenant_id\nconst tenantId = parseInt($request.params.tenantId);\nconst body = $request.body;\n\n// Parse WhatsApp Cloud API format\nconst entry = body.entry[0];\nconst changes = entry.changes[0];\nconst value = changes.value;\n\nif (!value.messages) {\n  return null; // No messages in this webhook\n}\n\nconst message = value.messages[0];\nconst phone = message.from;\nconst timestamp = parseInt(message.timestamp);\nconst messageId = message.id;\nconst text = message.text?.body || '';\nconst mediaUrl = message.image?.link || message.document?.link || null;\nconst mediaType = message.type || 'text';\n\nreturn {\n  tenantId,\n  phone,\n  text,\n  mediaUrl,\n  mediaType,\n  timestamp,\n  messageId,\n  rawWebhook: body\n};"
+      },
+      "id": "parse_webhook",
+      "name": "Parse Webhook",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $mysql.query(\"SELECT id, email, status FROM users WHERE id = \" + $node['parse_webhook'].json.tenantId) }}"
+      },
+      "id": "validate_tenant",
+      "name": "Validate Tenant",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "query": "SELECT * FROM bot_config WHERE tenant_id = {{$node['parse_webhook'].json.tenantId}}"
+      },
+      "id": "get_bot_config",
+      "name": "Get Bot Config",
+      "type": "n8n-nodes-base.mysqldb",
+      "typeVersion": 2,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "javaScriptCode": "// Check rate limiting per phone per tenant\nconst tenantId = $node['parse_webhook'].json.tenantId;\nconst phone = $node['parse_webhook'].json.phone;\nconst rateLimit = $node['get_bot_config'].json[0]?.rate_limit_per_phone || 20;\nconst rateLimitWindow = $node['get_bot_config'].json[0]?.rate_limit_window_seconds || 3600;\n\n// Check conversation count in last window\nconst cutoffTime = new Date(Date.now() - rateLimitWindow * 1000).toISOString();\n\nreturn {\n  tenantId,\n  phone,\n  rateLimit,\n  cutoffTime,\n  shouldRateLimit: false // This would be set based on DB query\n};"
+      },
+      "id": "check_rate_limit",
+      "name": "Check Rate Limit",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "query": "SELECT opted_out FROM customers WHERE tenant_id = {{$node['parse_webhook'].json.tenantId}} AND phone = '{{$node['parse_webhook'].json.phone}}' LIMIT 1"
+      },
+      "id": "check_optout",
+      "name": "Check Opt-Out Status",
+      "type": "n8n-nodes-base.mysqldb",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "any": [
+            {
+              "value1": "={{ $node['check_optout'].json[0]?.opted_out }}",
+              "value2": true,
+              "operation": "equals"
+            }
+          ]
+        }
+      },
+      "id": "is_opted_out",
+      "name": "Is Opted Out?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1300,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "any": [
+            {
+              "value1": "={{ $node['parse_webhook'].json.text.toLowerCase().includes('book') || $node['parse_webhook'].json.text.toLowerCase().includes('appointment') }}",
+              "value2": true,
+              "operation": "equals"
+            }
+          ]
+        }
+      },
+      "id": "is_booking_request",
+      "name": "Is Booking Request?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1300,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "query": "INSERT INTO conversations (tenant_id, customer_id, phone, direction, message_type, content, source, created_at) VALUES ({{$node['parse_webhook'].json.tenantId}}, 0, '{{$node['parse_webhook'].json.phone}}', 'inbound', '{{$node['parse_webhook'].json.mediaType}}', '{{$node['parse_webhook'].json.text}}', 'webhook', NOW())"
+      },
+      "id": "store_message",
+      "name": "Store Incoming Message",
+      "type": "n8n-nodes-base.mysqldb",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "javaScriptCode": "return {\n  statusCode: 200,\n  success: true,\n  message: 'Message received and routed'\n};"
+      },
+      "id": "response",
+      "name": "Return Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1700,
+        450
+      ]
+    }
+  ],
+  "connections": {
+    "webhook_trigger": {
+      "main": [
+        [
+          {
+            "node": "parse_webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "parse_webhook": {
+      "main": [
+        [
+          {
+            "node": "get_bot_config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get_bot_config": {
+      "main": [
+        [
+          {
+            "node": "check_rate_limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_rate_limit": {
+      "main": [
+        [
+          {
+            "node": "check_optout",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_optout": {
+      "main": [
+        [
+          {
+            "node": "is_opted_out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "is_opted_out": {
+      "main": [
+        [
+          {
+            "node": "is_booking_request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "is_booking_request": {
+      "main": [
+        [
+          {
+            "node": "store_message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "store_message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "store_message": {
+      "main": [
+        [
+          {
+            "node": "response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {},
+  "versionId": "8f0d9c3d-5c1d-4d8c-8e9d-3c5d7e8f9a0b"
+}

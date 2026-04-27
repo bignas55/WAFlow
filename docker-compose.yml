@@ -1,0 +1,165 @@
+# ══════════════════════════════════════════════════════════════════════════════
+#  WAFlow — Docker Compose
+#
+#  Quick start:
+#    cp .env.example .env          # fill in JWT_SECRET, ENCRYPTION_KEY, etc.
+#    docker compose up -d          # start MySQL + WAFlow app
+#    docker compose logs -f app    # watch live logs
+#
+#  AI (Ollama):
+#    Ollama runs ON THE HOST (not in Docker) so your GPU is available.
+#    The app reaches it via host.docker.internal:11434.
+#    Make sure Ollama is running:  ollama serve
+#    And the model is pulled:      ollama pull gemma4:latest
+#
+#  Stopping:
+#    docker compose down           # stop (keeps volumes)
+#    docker compose down -v        # stop + wipe ALL data (destructive)
+# ══════════════════════════════════════════════════════════════════════════════
+
+services:
+
+  # ── Redis (BullMQ — inbound message queue) ─────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: waflow_redis
+    restart: unless-stopped
+    networks:
+      - waflow_net
+
+  # ── MySQL 8 ────────────────────────────────────────────────────────────────
+  db:
+    image: mysql:8.0
+    container_name: waflow_db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE:      ${DB_NAME:-waflow}
+      MYSQL_USER:          ${DB_USER:-waflow}
+      MYSQL_PASSWORD:      ${DB_PASSWORD:-waflowpassword}
+    volumes:
+      - db_data:/var/lib/mysql
+    ports:
+      - "3307:3306"   # mapped to 3307 to avoid conflict with local MySQL on 3306
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost",
+             "-u", "root", "--password=${DB_ROOT_PASSWORD:-rootpassword}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - waflow_net
+
+  # ── WAFlow Application ─────────────────────────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: waflow_app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      PORT:     3000
+
+      # ── Redis (required for BullMQ inbound message worker) ──────────────
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+
+      # ── Database ────────────────────────────────────────────────────────
+      DATABASE_URL: mysql://${DB_USER:-waflow}:${DB_PASSWORD:-waflowpassword}@db:3306/${DB_NAME:-waflow}
+
+      # ── Auth ────────────────────────────────────────────────────────────
+      # REQUIRED — generate with: openssl rand -base64 48
+      JWT_SECRET:     ${JWT_SECRET:-change-me-in-production}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+
+      # ── Encryption (API keys stored in DB are encrypted with this) ───────
+      # REQUIRED — generate with: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+      # WARNING: Never change this after data is stored — you will lose all encrypted values.
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+
+      # ── AI / LLM ────────────────────────────────────────────────────────
+      # Ollama runs on the HOST machine (not inside Docker) for GPU access.
+      # Docker reaches it via host.docker.internal (Linux: extra_hosts below).
+      AI_API_URL: ${AI_API_URL:-http://host.docker.internal:11434/v1}
+      AI_API_KEY: ${AI_API_KEY:-ollama}
+      AI_MODEL:   ${AI_MODEL:-gemma4:latest}
+
+      # ── WhatsApp (Meta Cloud API — optional) ────────────────────────────
+      WHATSAPP_PHONE_NUMBER_ID:     ${WHATSAPP_PHONE_NUMBER_ID:-}
+      WHATSAPP_BUSINESS_ACCOUNT_ID: ${WHATSAPP_BUSINESS_ACCOUNT_ID:-}
+      WHATSAPP_ACCESS_TOKEN:        ${WHATSAPP_ACCESS_TOKEN:-}
+      WHATSAPP_WEBHOOK_TOKEN:       ${WHATSAPP_WEBHOOK_TOKEN:-}
+      # Meta App Secret — verifies incoming webhook signatures (required in production)
+      WHATSAPP_APP_SECRET:          ${WHATSAPP_APP_SECRET:-}
+
+      # ── Email Alerts (leave SMTP_HOST blank to disable) ─────────────────
+      SMTP_HOST:      ${SMTP_HOST:-}
+      SMTP_PORT:      ${SMTP_PORT:-587}
+      SMTP_SECURE:    ${SMTP_SECURE:-false}
+      SMTP_USER:      ${SMTP_USER:-}
+      SMTP_PASS:      ${SMTP_PASS:-}
+      ALERT_EMAIL:    ${ALERT_EMAIL:-}
+      ALERT_FROM:     ${ALERT_FROM:-WAFlow Alerts <alerts@waflow.app>}
+      ALERTS_ENABLED: ${ALERTS_ENABLED:-true}
+
+      # ── App URLs ────────────────────────────────────────────────────────
+      # Set APP_URL to your public domain in production (used in email links)
+      APP_URL:      ${APP_URL:-http://localhost:3000}
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
+
+      # ── Puppeteer ───────────────────────────────────────────────────────
+      PUPPETEER_EXECUTABLE_PATH:       /usr/bin/chromium
+      PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: "true"
+
+      # ── Schedulers ──────────────────────────────────────────────────────
+      HEALTH_CHECK_INTERVAL_MIN: ${HEALTH_CHECK_INTERVAL_MIN:-30}
+      HEARTBEAT_INTERVAL_MIN:    ${HEARTBEAT_INTERVAL_MIN:-5}
+
+      # ── Self-hosted licensing (leave blank for standalone installs) ──────
+      LICENSE_KEY:     ${LICENSE_KEY:-}
+      CLOUD_ADMIN_URL: ${CLOUD_ADMIN_URL:-}
+      INSTANCE_URL:    ${INSTANCE_URL:-}
+
+    volumes:
+      # WhatsApp session files — persist across restarts so you don't re-scan QR
+      - wwebjs_auth:/app/.wwebjs_auth
+      # Uploaded knowledge base documents
+      - uploads:/app/uploads
+
+    ports:
+      - "${APP_PORT:-3000}:3000"
+
+    # Linux: Docker cannot resolve host.docker.internal by default.
+    # This maps it to the host gateway so the app can reach Ollama on the host.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+    networks:
+      - waflow_net
+
+# ── Named volumes ─────────────────────────────────────────────────────────────
+volumes:
+  db_data:
+    driver: local
+  wwebjs_auth:
+    driver: local
+  uploads:
+    driver: local
+
+# ── Internal network ──────────────────────────────────────────────────────────
+networks:
+  waflow_net:
+    driver: bridge

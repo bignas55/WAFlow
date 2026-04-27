@@ -1,0 +1,50 @@
+═══════════════════════════════════════════════════════════════════════════════
+  ✅ CRITICAL FIXES APPLIED
+═══════════════════════════════════════════════════════════════════════════════
+
+Problems Fixed:
+  ✅ esbuild platform mismatch (darwin-arm64 → linux-arm64)
+     Solution: Removed --frozen-lockfile so pnpm detects Linux platform
+
+  ✅ Missing .env file error
+     Solution: Entrypoint now creates .env if missing
+
+═══════════════════════════════════════════════════════════════════════════════
+  🚀 REBUILD NOW:
+═══════════════════════════════════════════════════════════════════════════════
+
+chmod +x rebuild-and-start-fixed.sh && ./rebuild-and-start-fixed.sh
+
+═══════════════════════════════════════════════════════════════════════════════
+  What's Different This Time
+═══════════════════════════════════════════════════════════════════════════════
+
+The Dockerfile will:
+1. Run `pnpm install` (not --frozen-lockfile)
+2. This auto-detects Linux platform
+3. Installs @esbuild/linux-arm64 (correct binary)
+4. Build succeeds with dist/server/index.js created
+5. pnpm drizzle:migrate works (has correct esbuild)
+6. .env file created by entrypoint
+7. App starts successfully
+
+Expected time: 2-3 minutes (similar to first build)
+
+═══════════════════════════════════════════════════════════════════════════════
+  After Build Completes
+═══════════════════════════════════════════════════════════════════════════════
+
+Watch logs in real-time:
+  docker-compose -f docker-compose.1k-users.yml logs -f waflow-1
+
+You should see:
+  ✅ "⏳ Waiting for MySQL to be ready..."
+  ✅ "📦 Running database migrations..."
+  ✅ "🌱 Seeding database..."
+  ✅ "🎯 Starting WAFlow application on port 3000..."
+  ✅ Server listening on port 3000
+
+Then access: http://localhost
+Login: admin@waflow.com / admin123
+
+═══════════════════════════════════════════════════════════════════════════════

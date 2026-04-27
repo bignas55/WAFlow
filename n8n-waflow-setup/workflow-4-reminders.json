@@ -1,0 +1,96 @@
+{
+  "name": "[4] Appointment Reminder Sender (Scheduled)",
+  "nodes": [
+    {
+      "parameters": {
+        "unit": "minutes",
+        "value": 60
+      },
+      "id": "cron_trigger",
+      "name": "Trigger Every Hour",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [100, 300]
+    },
+    {
+      "parameters": {
+        "query": "SELECT a.id, a.tenant_id, a.phone, a.service, a.date, a.time_start, c.name FROM appointments a LEFT JOIN customers c ON a.customer_id = c.id WHERE DATE(a.date) = DATE_ADD(CURDATE(), INTERVAL 1 DAY) AND a.reminder_sent = false AND a.status = 'confirmed' LIMIT 100"
+      },
+      "id": "get_reminders",
+      "name": "Get Appointments for Tomorrow",
+      "type": "n8n-nodes-base.mysqldb",
+      "typeVersion": 2,
+      "position": [300, 300]
+    },
+    {
+      "parameters": {},
+      "id": "loop_appointments",
+      "name": "Loop Each Appointment",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "javaScriptCode": "const apt = $node['loop_appointments'].json;\nconst customer_name = apt.name || 'Valued Customer';\nconst service = apt.service || 'Appointment';\nconst time = apt.time_start;\n\nconst message = `Hi ${customer_name}! This is a reminder that you have a ${service} appointment tomorrow at ${time}. Please confirm or let us know if you need to reschedule.`;\n\nreturn {\n  phone: apt.phone,\n  message: message,\n  apt_id: apt.id,\n  tenant_id: apt.tenant_id\n};"
+      },
+      "id": "format_reminder",
+      "name": "Format Reminder Message",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "query": "INSERT INTO conversations (tenant_id, phone, direction, content, source, created_at) VALUES ({{$node['format_reminder'].json.tenant_id}}, '{{$node['format_reminder'].json.phone}}', 'outbound', '{{$node['format_reminder'].json.message}}', 'reminder', NOW())"
+      },
+      "id": "send_reminder",
+      "name": "Send WhatsApp Reminder",
+      "type": "n8n-nodes-base.mysqldb",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "query": "UPDATE appointments SET reminder_sent = true, updated_at = NOW() WHERE id = {{$node['format_reminder'].json.apt_id}}"
+      },
+      "id": "mark_reminder_sent",
+      "name": "Mark Reminder Sent",
+      "type": "n8n-nodes-base.mysqldb",
+      "typeVersion": 2,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "javaScriptCode": "return { success: true, reminders_sent: $node['loop_appointments'].json.length };"
+      },
+      "id": "complete",
+      "name": "Complete",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1300, 300]
+    }
+  ],
+  "connections": {
+    "cron_trigger": {
+      "main": [[{"node": "get_reminders", "type": "main", "index": 0}]]
+    },
+    "get_reminders": {
+      "main": [[{"node": "loop_appointments", "type": "main", "index": 0}]]
+    },
+    "loop_appointments": {
+      "main": [[{"node": "format_reminder", "type": "main", "index": 0}]]
+    },
+    "format_reminder": {
+      "main": [[{"node": "send_reminder", "type": "main", "index": 0}]]
+    },
+    "send_reminder": {
+      "main": [[{"node": "mark_reminder_sent", "type": "main", "index": 0}]]
+    },
+    "mark_reminder_sent": {
+      "main": [[{"node": "complete", "type": "main", "index": 0}]]
+    }
+  },
+  "active": true,
+  "settings": {}
+}

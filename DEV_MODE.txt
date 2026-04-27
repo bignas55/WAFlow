@@ -1,0 +1,233 @@
+═══════════════════════════════════════════════════════════════════════════════
+  WAFlow Development Mode — Quick Start Guide
+═══════════════════════════════════════════════════════════════════════════════
+
+FASTEST WAY TO START DEVELOPMENT:
+
+chmod +x dev-start.sh
+./dev-start.sh
+
+That's it! The script does everything:
+  ✅ Starts Docker (MySQL, Redis, Nginx)
+  ✅ Installs dependencies
+  ✅ Runs migrations
+  ✅ Starts dev server with hot reload
+
+═══════════════════════════════════════════════════════════════════════════════
+  What You Get
+═══════════════════════════════════════════════════════════════════════════════
+
+Frontend:
+  URL: http://localhost:5173
+  Features: Hot reload, Vite dev server
+  Auto-refresh: Changes to React files instant
+
+Backend:
+  URL: http://localhost:3000
+  Features: TypeScript watch mode, tsx auto-reload
+  Auto-restart: Changes to server code auto-reload
+
+Database:
+  Type: MySQL (Docker)
+  Port: 3306
+  Credentials: waflow / waflowpassword
+
+Cache:
+  Type: Redis (Docker)
+  Port: 6379
+
+Admin (Production Build):
+  URL: http://localhost
+  Build: Pre-built from dist/
+
+═══════════════════════════════════════════════════════════════════════════════
+  Development Workflow
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Start dev server:
+   ./dev-start.sh
+
+2. Open browser:
+   Frontend: http://localhost:5173
+   OR API: http://localhost:3000
+
+3. Make changes:
+   - Edit React files → auto-reload in browser
+   - Edit TypeScript files → auto-restart backend
+   - Edit SQL schema → run: pnpm drizzle:generate && pnpm drizzle:migrate
+
+4. Stop when done:
+   Press Ctrl+C
+   Then: ./dev-stop.sh
+
+═══════════════════════════════════════════════════════════════════════════════
+  Available Commands (while dev server running)
+═══════════════════════════════════════════════════════════════════════════════
+
+In new terminal window:
+
+# Generate migrations from schema changes
+pnpm drizzle:generate
+
+# Apply pending migrations
+pnpm drizzle:migrate
+
+# Seed database with test data
+pnpm db:seed
+
+# Build for production
+pnpm build
+
+# Run tests
+pnpm test
+
+# Format code
+pnpm format
+
+# Check Docker status
+docker-compose -f docker-compose.1k-users.yml ps
+
+# View container logs
+docker-compose -f docker-compose.1k-users.yml logs -f waflow-app-1
+
+# Access database directly
+docker-compose -f docker-compose.1k-users.yml exec mysql mysql -u waflow -pwaflowpassword
+
+# Access Redis
+redis-cli
+
+═══════════════════════════════════════════════════════════════════════════════
+  Common Development Tasks
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Add a new database table:
+   a) Edit drizzle/schema.ts
+   b) Run: pnpm drizzle:generate
+   c) Run: pnpm drizzle:migrate
+   d) Server will auto-reload
+
+2. Create a new API endpoint:
+   a) Edit server/routers/myRouter.ts (or create new file)
+   b) Add to server/routers.ts
+   c) Server auto-reloads, start calling from frontend
+
+3. Create a new React page:
+   a) Add file to client/src/pages/MyPage.tsx
+   b) Add route to client/src/App.tsx
+   c) Browser auto-reloads when you save
+
+4. Test WhatsApp locally:
+   a) Setup session in admin dashboard
+   b) Messages come to console/logs
+   c) Check: docker-compose logs -f waflow-app-1
+
+5. Check cache behavior:
+   a) Look for "Cache HIT" in logs
+   b) Shows query reduction working
+   c) Command: docker-compose logs waflow-app-1 | grep "Cache"
+
+═══════════════════════════════════════════════════════════════════════════════
+  Troubleshooting
+═══════════════════════════════════════════════════════════════════════════════
+
+Problem: "Port 3000 already in use"
+Solution:
+  kill -9 $(lsof -t -i:3000)
+  ./dev-start.sh
+
+Problem: "Port 5173 already in use"
+Solution:
+  kill -9 $(lsof -t -i:5173)
+  ./dev-start.sh
+
+Problem: "Cannot find module"
+Solution:
+  pnpm install
+  ./dev-start.sh
+
+Problem: Database errors
+Solution:
+  docker-compose -f docker-compose.1k-users.yml restart mysql
+  pnpm drizzle:migrate
+
+Problem: Redis connection error
+Solution:
+  docker-compose -f docker-compose.1k-users.yml restart redis
+  Restart dev server: Ctrl+C, then ./dev-start.sh
+
+Problem: Migrations failed
+Solution:
+  pnpm drizzle:generate
+  pnpm drizzle:migrate
+  If still fails: docker-compose -f docker-compose.1k-users.yml down -v && ./dev-start.sh
+
+═══════════════════════════════════════════════════════════════════════════════
+  File Locations
+═══════════════════════════════════════════════════════════════════════════════
+
+Frontend Code:       client/src/pages/*.tsx
+Backend Code:        server/routers/*.ts
+Database Schema:     drizzle/schema.ts
+Database Migrations: drizzle/migrations/*.sql
+Environment:         .env (local dev)
+Config:              drizzle.config.ts
+
+═══════════════════════════════════════════════════════════════════════════════
+  Environment Variables (Auto-loaded from .env)
+═══════════════════════════════════════════════════════════════════════════════
+
+DATABASE_URL=mysql://waflow:waflowpassword@localhost:3306/waflow
+REDIS_URL=redis://localhost:6379
+NODE_ENV=development
+PORT=3000
+
+For custom AI models:
+  AI_API_URL=http://localhost:11434/v1
+  AI_API_KEY=ollama
+  AI_MODEL=llama2
+
+═══════════════════════════════════════════════════════════════════════════════
+  Pro Tips
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Use two terminals:
+   Terminal 1: ./dev-start.sh (dev server)
+   Terminal 2: Run other commands while dev server runs
+
+2. Keep browser DevTools open to debug frontend
+
+3. Check logs while developing:
+   docker-compose -f docker-compose.1k-users.yml logs -f waflow-app-1
+
+4. Use Drizzle Studio for database UI:
+   pnpm drizzle:studio
+
+5. Test API endpoints:
+   curl http://localhost:3000/api/trpc/auth.me
+
+6. Monitor performance:
+   Check "Cache HIT" in logs to see if caching works
+
+═══════════════════════════════════════════════════════════════════════════════
+  Quick Commands Summary
+═══════════════════════════════════════════════════════════════════════════════
+
+Start development:      ./dev-start.sh
+Stop everything:        ./dev-stop.sh
+View logs:              docker-compose -f docker-compose.1k-users.yml logs -f
+Restart Docker:         docker-compose -f docker-compose.1k-users.yml restart
+Reset (deletes data):   docker-compose -f docker-compose.1k-users.yml down -v
+
+═══════════════════════════════════════════════════════════════════════════════
+  You're all set! 🚀
+═══════════════════════════════════════════════════════════════════════════════
+
+Run: ./dev-start.sh
+
+Then develop at:
+  http://localhost:5173 (frontend with hot reload)
+  http://localhost:3000 (API)
+
+Happy coding! 💻
+
+═══════════════════════════════════════════════════════════════════════════════

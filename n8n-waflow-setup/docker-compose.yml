@@ -1,0 +1,77 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: n8n_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword123
+      MYSQL_DATABASE: waflow_n8n
+      MYSQL_USER: waflow
+      MYSQL_PASSWORD: waflow123
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - n8n_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+      interval: 10s
+
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n_app
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      # Core n8n config
+      - N8N_PROTOCOL=http
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      - N8N_PATH=/
+      - N8N_SECURE_COOKIE=false
+      - WEBHOOK_URL=http://localhost:5678/
+
+      # Database
+      - DB_TYPE=mysqldb
+      - DB_MYSQLDB_HOST=mysql
+      - DB_MYSQLDB_PORT=3306
+      - DB_MYSQLDB_DATABASE=waflow_n8n
+      - DB_MYSQLDB_USER=waflow
+      - DB_MYSQLDB_PASSWORD=waflow123
+
+      # JWT & Security
+      - N8N_JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
+      - N8N_USER_MANAGEMENT_JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
+
+      # Credentials
+      - N8N_ENCRYPTION_KEY=1234567890123456789012345678901234567890
+
+      # API
+      - N8N_EDITOR_BASE_URL=http://localhost:5678
+      - N8N_API_CALL_LIMIT_INTERVAL=15m
+      - N8N_API_CALL_LIMIT_AMOUNT_ENABLED=true
+      - N8N_API_CALL_LIMIT_AMOUNT=300
+
+      # Logging
+      - N8N_LOG_LEVEL=info
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - n8n_network
+    restart: unless-stopped
+
+networks:
+  n8n_network:
+    driver: bridge
+
+volumes:
+  mysql_data:
+  n8n_data:

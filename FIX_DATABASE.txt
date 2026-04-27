@@ -1,0 +1,90 @@
+═══════════════════════════════════════════════════════════════════════════════
+  Database Setup — Run these commands in order
+═══════════════════════════════════════════════════════════════════════════════
+
+The containers are now running! ✅
+But the database needs to be initialized.
+
+Run these 3 commands:
+
+1. Generate migrations from schema:
+   ─────────────────────────────────
+   npm run drizzle:generate
+
+
+2. Apply migrations to database:
+   ────────────────────────────────
+   npm run drizzle:migrate
+
+
+3. Seed admin user and templates:
+   ───────────────────────────────
+   npm run db:seed
+
+
+═══════════════════════════════════════════════════════════════════════════════
+  What Each Command Does
+═══════════════════════════════════════════════════════════════════════════════
+
+drizzle:generate
+  → Reads drizzle/schema.ts
+  → Creates SQL migration files in drizzle/migrations/
+  → Generates migration metadata in meta/_journal.json
+
+drizzle:migrate
+  → Applies all pending migrations to MySQL database
+  → Creates 42 tables (users, conversations, templates, appointments, etc.)
+
+db:seed
+  → Inserts admin user (admin@waflow.com / admin123)
+  → Inserts default message templates
+  → Inserts default bot configuration
+
+═══════════════════════════════════════════════════════════════════════════════
+  Expected Output
+═══════════════════════════════════════════════════════════════════════════════
+
+After running all 3 commands, you should see:
+
+✅ Drizzle Studio available at https://local.drizzle.studio (if prompted)
+✅ Database tables created
+✅ Admin user seeded: admin@waflow.com / admin123
+✅ Default templates inserted
+✅ Ready to access http://localhost
+
+═══════════════════════════════════════════════════════════════════════════════
+  Container Status Check
+═══════════════════════════════════════════════════════════════════════════════
+
+Before running database commands, verify containers are healthy:
+
+docker-compose -f docker-compose.1k-users.yml ps
+
+Expected (all should show Up):
+  waflow-app-1   Up
+  waflow-app-2   Up
+  waflow-app-3   Up
+  nginx          Up
+  mysql          Up (healthy)
+  redis          Up (healthy)
+
+═══════════════════════════════════════════════════════════════════════════════
+  Troubleshooting
+═══════════════════════════════════════════════════════════════════════════════
+
+If "npm run drizzle:generate" fails:
+  → Check file permissions in drizzle/ folder
+  → Ensure drizzle/schema.ts exists and is readable
+  → Try: pnpm drizzle:generate (if pnpm is installed)
+
+If "npm run drizzle:migrate" fails with database error:
+  → Check MySQL is running: docker-compose ps mysql
+  → Verify connection: docker-compose logs mysql | tail -20
+  → Check DATABASE_URL environment variable is correct
+
+If "npm run db:seed" fails:
+  → Ensure migrations ran successfully first
+  → Check tables exist: docker-compose exec mysql mysql -u waflow -pwaflowpassword -e "SHOW TABLES FROM waflow;"
+  → Check logs: docker-compose logs waflow-1
+
+═══════════════════════════════════════════════════════════════════════════════

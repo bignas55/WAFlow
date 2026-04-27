@@ -1,0 +1,151 @@
+{
+  "name": "[3] Booking Flow Handler",
+  "nodes": [
+    {
+      "parameters": {
+        "triggerData": {
+          "value": {
+            "tenantId": 2,
+            "phone": "1234567890",
+            "text": "I want to book an appointment",
+            "messageId": "msg123"
+          }
+        }
+      },
+      "id": "trigger",
+      "name": "Trigger on Booking Keywords",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [100, 300]
+    },
+    {
+      "parameters": {
+        "query": "SELECT enable_bookings FROM bot_config WHERE tenant_id = {{$node['trigger'].json.tenantId}}"
+      },
+      "id": "check_bookings_enabled",
+      "name": "Check Bookings Enabled",
+      "type": "n8n-nodes-base.mysqldb",
+      "typeVersion": 2,
+      "position": [300, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "any": [
+            {
+              "value1": "={{ $node['check_bookings_enabled'].json[0]?.enable_bookings }}",
+              "value2": true,
+              "operation": "equals"
+            }
+          ]
+        }
+      },
+      "id": "is_bookings_enabled",
+      "name": "Is Bookings Enabled?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "query": "SELECT id, name FROM staff WHERE tenant_id = {{$node['trigger'].json.tenantId}} AND (availability_json IS NOT NULL OR availability_json != '')"
+      },
+      "id": "get_staff",
+      "name": "Get Available Staff",
+      "type": "n8n-nodes-base.mysqldb",
+      "typeVersion": 2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "javaScriptCode": "// Generate list of staff for interactive menu\nconst staff = $node['get_staff'].json;\nconst options = staff.map((s, i) => ({\n  id: s.id.toString(),\n  title: s.name\n}));\n\nreturn {\n  staff_count: staff.length,\n  staff_options: options,\n  menu_message: `Great! Who would you like to book with?\\n${options.map((s, i) => `${i+1}. ${s.title}`).join('\\n')}`\n};"
+      },
+      "id": "build_staff_menu",
+      "name": "Build Staff Selection Menu",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "query": "SELECT DISTINCT DATE(date) as available_date FROM appointments WHERE staff_id = {{$node['trigger'].json.selected_staff_id}} AND DATE(date) >= CURDATE() AND DATE(date) <= DATE_ADD(CURDATE(), INTERVAL 14 DAY) AND status NOT IN ('cancelled', 'no-show') LIMIT 14"
+      },
+      "id": "get_available_dates",
+      "name": "Get Available Dates",
+      "type": "n8n-nodes-base.mysqldb",
+      "typeVersion": 2,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "javaScriptCode": "// Get time slots for selected date\nconst date = $node['trigger'].json.selected_date;\nconst staff_id = $node['trigger'].json.selected_staff_id;\n\n// Business hours: 9 AM to 5 PM (assuming 1 hour slots)\nconst slots = [];\nfor (let hour = 9; hour < 17; hour++) {\n  slots.push({\n    time: `${hour}:00`,\n    label: `${hour > 12 ? hour - 12 : hour}:00 ${hour >= 12 ? 'PM' : 'AM'}`\n  });\n}\n\nreturn {\n  available_slots: slots,\n  menu_message: `Available times on ${date}:\\n${slots.map((s, i) => `${i+1}. ${s.label}`).join('\\n')}`\n};"
+      },
+      "id": "get_available_times",
+      "name": "Get Available Time Slots",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1300, 300]
+    },
+    {
+      "parameters": {
+        "query": "INSERT INTO appointments (tenant_id, customer_id, phone, service, staff_id, date, time_start, duration_minutes, status, created_at) VALUES ({{$node['trigger'].json.tenantId}}, 0, '{{$node['trigger'].json.phone}}', 'General Consultation', {{$node['trigger'].json.selected_staff_id}}, '{{$node['trigger'].json.selected_date}}', '{{$node['trigger'].json.selected_time}}', 60, 'pending', NOW())"
+      },
+      "id": "create_appointment",
+      "name": "Create Appointment",
+      "type": "n8n-nodes-base.mysqldb",
+      "typeVersion": 2,
+      "position": [1500, 300]
+    },
+    {
+      "parameters": {
+        "query": "INSERT INTO conversations (tenant_id, phone, direction, content, source, created_at) VALUES ({{$node['trigger'].json.tenantId}}, '{{$node['trigger'].json.phone}}', 'outbound', 'Your appointment has been confirmed!', 'booking', NOW())"
+      },
+      "id": "send_confirmation",
+      "name": "Send Confirmation Message",
+      "type": "n8n-nodes-base.mysqldb",
+      "typeVersion": 2,
+      "position": [1700, 300]
+    },
+    {
+      "parameters": {
+        "javaScriptCode": "return {\n  success: true,\n  appointment_created: true,\n  message: `Appointment booked for ${$node['trigger'].json.selected_date} at ${$node['trigger'].json.selected_time}`\n};"
+      },
+      "id": "response",
+      "name": "Return Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1900, 300]
+    }
+  ],
+  "connections": {
+    "trigger": {
+      "main": [[{"node": "check_bookings_enabled", "type": "main", "index": 0}]]
+    },
+    "check_bookings_enabled": {
+      "main": [[{"node": "is_bookings_enabled", "type": "main", "index": 0}]]
+    },
+    "is_bookings_enabled": {
+      "main": [[{"node": "get_staff", "type": "main", "index": 0}], []]
+    },
+    "get_staff": {
+      "main": [[{"node": "build_staff_menu", "type": "main", "index": 0}]]
+    },
+    "build_staff_menu": {
+      "main": [[{"node": "get_available_dates", "type": "main", "index": 0}]]
+    },
+    "get_available_dates": {
+      "main": [[{"node": "get_available_times", "type": "main", "index": 0}]]
+    },
+    "get_available_times": {
+      "main": [[{"node": "create_appointment", "type": "main", "index": 0}]]
+    },
+    "create_appointment": {
+      "main": [[{"node": "send_confirmation", "type": "main", "index": 0}]]
+    },
+    "send_confirmation": {
+      "main": [[{"node": "response", "type": "main", "index": 0}]]
+    }
+  },
+  "active": true,
+  "settings": {}
+}
