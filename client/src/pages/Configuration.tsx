@@ -546,7 +546,7 @@ type Tab = 'ai' | 'whatsapp' | 'hours' | 'voice' | 'language' | 'notifications';
 export default function Configuration() {
   const [tab, setTab] = useState<Tab>('ai');
   const [saved, setSaved] = useState(false);
-  const [aiProvider, setAiProvider] = useState<'ollama' | 'openai' | 'groq'>('ollama');
+  const [aiProvider, setAiProvider] = useState<'ollama' | 'openai' | 'groq' | 'claude'>('ollama');
   // customModel is only used when the user selects the "Custom Model" card
   const [customModel, setCustomModel] = useState('');
 
@@ -554,26 +554,35 @@ export default function Configuration() {
   // Use a ref (not state) so that remounting re-initialises the form without
   // triggering an extra re-render cycle that could race with pending refetches.
   const initializedRef = useRef(false);
+  const { data: user } = trpc.auth.me.useQuery();
+  const isAdmin = user?.role === 'admin';
   const { data: config, isLoading, isError, error } = trpc.botConfig.get.useQuery();
   const updateMutation = trpc.botConfig.update.useMutation({
     onSuccess: () => {
       // Invalidate so the next query reflects the actual DB value instead of
       // relying on an optimistic cache patch that could mask a failed write.
       utils.botConfig.get.invalidate();
+      // Reset initializedRef so that when config refetches, the useEffect will
+      // run and update the form with the fresh DB values
+      initializedRef.current = false;
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     },
     onError: (err) => {
-      console.error('[botConfig.update] save failed:', err.message);
+      console.error('[botConfig.update] save failed:', err);
+      alert(`Failed to save configuration: ${err.message}`);
     },
   });
 
   const [form, setForm] = useState({
     businessName: '',
     systemPrompt: '',
+    aiProvider: 'ollama',
     aiApiUrl: 'http://host.docker.internal:11434/v1',
     aiApiKey: 'ollama',
     aiModel: 'neural-chat',
+    claudeApiKey: '',
+    claudeModel: 'claude-3-5-sonnet-20241022',
     phoneNumberId: '',
     accessToken: '',
     verifyToken: '',
@@ -584,8 +593,6 @@ export default function Configuration() {
     businessDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
     afterHoursMessage: '',
     maxConversationLength: 50,
-    responseDelay: 1000,
-    notificationsEnabled: true,
     escalationEmail: '',
     escalationPhone: '',
     // Language
@@ -645,7 +652,8 @@ export default function Configuration() {
       const url = config.aiApiUrl || '';
       const isOllama = url.includes('11434') || config.aiApiKey === 'ollama';
       const isGroq   = url.includes('groq.com');
-      setAiProvider(isOllama ? 'ollama' : isGroq ? 'groq' : 'openai');
+      const isClaude = config.aiProvider === 'claude';
+      setAiProvider(isClaude ? 'claude' : isOllama ? 'ollama' : isGroq ? 'groq' : 'openai');
       // If the saved model is a custom (unknown) value, pre-fill the custom input
       if (config.aiModel && !_knownModelIds.has(config.aiModel)) {
         setCustomModel(config.aiModel);
@@ -653,7 +661,7 @@ export default function Configuration() {
     }
   }, [config]);
 
-  const handleProviderChange = (provider: 'ollama' | 'openai' | 'groq') => {
+  const handleProviderChange = (provider: 'ollama' | 'openai' | 'groq' | 'claude') => {
     if (provider === aiProvider) return;
     setAiProvider(provider);
     if (provider === 'ollama') {
@@ -667,23 +675,47 @@ export default function Configuration() {
           : 'neural-chat';
       setForm((prev) => ({
         ...prev,
+        aiProvider: 'ollama',
         aiApiUrl: 'http://host.docker.internal:11434/v1',
         aiApiKey: 'ollama',
         aiModel: restoredModel,
+        // Clear Claude fields
+        claudeApiKey: '',
+        claudeModel: 'claude-3-5-sonnet-20241022',
       }));
     } else if (provider === 'groq') {
       setForm((prev) => ({
         ...prev,
+        aiProvider: 'groq',
         aiApiUrl: 'https://api.groq.com/openai/v1',
         aiApiKey: '',
         aiModel: 'llama-3.1-8b-instant',
+        // Clear Claude fields
+        claudeApiKey: '',
+        claudeModel: 'claude-3-5-sonnet-20241022',
+      }));
+    } else if (provider === 'claude') {
+      setForm((prev) => ({
+        ...prev,
+        aiProvider: 'claude',
+        // Clear OpenAI/Groq/Ollama fields
+        aiApiUrl: '',
+        aiApiKey: '',
+        aiModel: '',
+        // Set Claude fields
+        claudeApiKey: '',
+        claudeModel: 'claude-3-5-sonnet-20241022',
       }));
     } else {
       setForm((prev) => ({
         ...prev,
+        aiProvider: 'openai',
         aiApiUrl: 'https://api.openai.com/v1',
         aiApiKey: '',
         aiModel: 'gpt-4o-mini',
+        // Clear Claude fields
+        claudeApiKey: '',
+        claudeModel: 'claude-3-5-sonnet-20241022',
       }));
     }
   };
@@ -811,7 +843,7 @@ export default function Configuration() {
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
             <h3 className="font-semibold text-gray-800 mb-4">AI Provider</h3>
 
-            <div className="grid grid-cols-3 gap-3 mb-6">
+            <div className="grid grid-cols-4 gap-3 mb-6">
               {/* Groq — recommended */}
               <button
                 onClick={() => handleProviderChange('groq')}
@@ -868,6 +900,25 @@ export default function Configuration() {
                   </div>
                 </div>
                 <p className="text-xs text-gray-500">GPT-4o, GPT-4-turbo. Best quality, requires paid API key.</p>
+              </button>
+
+              {/* Claude */}
+              <button
+                onClick={() => handleProviderChange('claude')}
+                className={`p-4 rounded-xl border-2 text-left transition ${
+                  aiProvider === 'claude' ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
+                    <Bot className="w-4 h-4 text-purple-700" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-sm text-gray-800">Claude</p>
+                    <p className="text-xs text-purple-600 font-medium">Cloud · Paid</p>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-500">Anthropic's Claude. Advanced reasoning and capabilities.</p>
               </button>
             </div>
 
@@ -955,15 +1006,25 @@ export default function Configuration() {
 
             {aiProvider === 'openai' && (
               <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
-                  <input
-                    type="password"
-                    value={form.aiApiKey}
-                    onChange={(e) => setForm({ ...form, aiApiKey: e.target.value })}
-                    className="w-full px-3 py-2 text-sm text-gray-900 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="sk-..."
-                  />
+                {isAdmin ? (
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p className="text-sm text-blue-800">
+                      <span className="font-semibold">API keys configured via .env</span><br />
+                      <span className="text-xs text-blue-700 mt-1 block">Admin users use system-wide keys from environment variables. Individual tenants can configure their own keys if needed.</span>
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">API Key <span className="text-xs text-gray-400">(optional — leave blank to use default)</span></label>
+                    <input
+                      type="password"
+                      value={form.aiApiKey}
+                      onChange={(e) => setForm({ ...form, aiApiKey: e.target.value })}
+                      className="w-full px-3 py-2 text-sm text-gray-900 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="sk-... (or leave empty)"
+                    />
+                  </div>
+                )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Model</label>
@@ -993,21 +1054,31 @@ export default function Configuration() {
                 </div>
 
                 {/* API Key */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Groq API Key</label>
-                  <input
-                    type="password"
-                    value={form.aiApiKey}
-                    onChange={(e) => setForm({ ...form, aiApiKey: e.target.value })}
-                    className="w-full px-3 py-2 text-sm text-gray-900 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
-                    placeholder="gsk_..."
-                  />
-                  <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
-                    Get your free key at{' '}
-                    <a href="https://console.groq.com" target="_blank" rel="noopener noreferrer" className="text-orange-600 hover:underline inline-flex items-center gap-0.5">
-                      console.groq.com <ExternalLink className="w-3 h-3" />
-                    </a>
-                  </p>
+                {isAdmin ? (
+                  <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                    <p className="text-sm text-orange-800">
+                      <span className="font-semibold">API keys configured via .env</span><br />
+                      <span className="text-xs text-orange-700 mt-1 block">Admin users use system-wide keys from environment variables. Individual tenants can configure their own keys if needed.</span>
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Groq API Key <span className="text-xs text-gray-400">(optional — leave blank to use default)</span></label>
+                    <input
+                      type="password"
+                      value={form.aiApiKey}
+                      onChange={(e) => setForm({ ...form, aiApiKey: e.target.value })}
+                      className="w-full px-3 py-2 text-sm text-gray-900 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                      placeholder="gsk_... (or leave empty)"
+                    />
+                    <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
+                      Get your free key at{' '}
+                      <a href="https://console.groq.com" target="_blank" rel="noopener noreferrer" className="text-orange-600 hover:underline inline-flex items-center gap-0.5">
+                        console.groq.com <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </p>
+                  </div>
+                )}
                 </div>
 
                 {/* Model selector */}
@@ -1036,6 +1107,62 @@ export default function Configuration() {
 
                 <div className="p-3 bg-gray-50 rounded-lg text-xs text-gray-500">
                   API endpoint: <code className="font-mono">https://api.groq.com/openai/v1</code>
+                </div>
+              </div>
+            )}
+
+            {aiProvider === 'claude' && (
+              <div className="space-y-4">
+                {/* Claude API Key */}
+                {isAdmin ? (
+                  <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                    <p className="text-sm text-purple-800">
+                      <span className="font-semibold">API keys configured via .env</span><br />
+                      <span className="text-xs text-purple-700 mt-1 block">Admin users use system-wide keys from environment variables. Individual tenants can configure their own keys if needed.</span>
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Claude API Key <span className="text-xs text-gray-400">(optional — leave blank to use default)</span></label>
+                    <input
+                      type="password"
+                      value={(form as any).claudeApiKey ?? ''}
+                      onChange={(e) => setForm({ ...form, claudeApiKey: e.target.value } as any)}
+                      className="w-full px-3 py-2 text-sm text-gray-900 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      placeholder="sk-ant-... (or leave empty)"
+                    />
+                    <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
+                      Get your key at{' '}
+                      <a href="https://console.anthropic.com/account/keys" target="_blank" rel="noopener noreferrer" className="text-purple-600 hover:underline inline-flex items-center gap-0.5">
+                        console.anthropic.com <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </p>
+                  </div>
+                )}
+                </div>
+
+                {/* Claude Model Selection */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Claude Model</label>
+                  <select
+                    value={(form as any).claudeModel ?? 'claude-3-5-sonnet-20241022'}
+                    onChange={(e) => setForm({ ...form, claudeModel: e.target.value } as any)}
+                    className="w-full px-3 py-2 text-sm text-gray-900 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  >
+                    <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet (Latest, Recommended)</option>
+                    <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku (Faster, Cheaper)</option>
+                    <option value="claude-3-opus-20240229">Claude 3 Opus (Most Powerful)</option>
+                  </select>
+                  <p className="text-xs text-gray-400 mt-1">Sonnet offers the best balance of speed and quality for most tasks.</p>
+                </div>
+
+                <div className="p-4 bg-purple-50 rounded-lg border border-purple-100 text-sm text-purple-900 space-y-2">
+                  <p className="font-medium">💜 About Claude</p>
+                  <ul className="text-xs space-y-1 list-disc list-inside text-purple-800">
+                    <li>Advanced reasoning and long-context understanding</li>
+                    <li>Excellent at complex tasks, analysis, and code</li>
+                    <li>Requires paid API access (no free tier)</li>
+                  </ul>
                 </div>
               </div>
             )}

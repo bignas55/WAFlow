@@ -26,6 +26,7 @@ export const usersRouter = router({
         email: users.email,
         role: users.role,
         isActive: users.isActive,
+        emailVerified: users.emailVerified,
         lastLoginAt: users.lastLoginAt,
         createdAt: users.createdAt,
       }).from(users).orderBy(desc(users.createdAt));
@@ -60,17 +61,21 @@ export const usersRouter = router({
 
       const newUserId = getInsertId(result);
 
-      // Create default botConfig for this tenant
+      // Get admin's botConfig to inherit AI settings
+      const [adminConfig] = await db.select().from(botConfig)
+        .where(eq(botConfig.tenantId, ctx.user.userId)).limit(1);
+
+      // Create default botConfig for this tenant, inheriting from admin's config
       await db.insert(botConfig).values({
         tenantId: newUserId,
         businessName: input.name + "'s Business",
-        systemPrompt: "You are a helpful customer service assistant for {businessName}. Be friendly, professional, and concise.",
-        afterHoursMessage: "Thank you for contacting {businessName}! Our team will respond during business hours.",
-        aiModel: process.env.AI_MODEL || "gemma4:latest",
-        aiApiUrl: process.env.AI_API_URL || "http://localhost:11434/v1",
+        systemPrompt: adminConfig?.systemPrompt ?? "You are a helpful customer service assistant for {businessName}. Be friendly, professional, and concise.",
+        afterHoursMessage: adminConfig?.afterHoursMessage ?? "Thank you for contacting {businessName}! Our team will respond during business hours.",
+        aiModel: adminConfig?.aiModel ?? (process.env.AI_MODEL || "gemma4:latest"),
+        aiApiUrl: adminConfig?.aiApiUrl ?? (process.env.AI_API_URL || "http://localhost:11434/v1"),
         // aiApiKey is read back via decrypt() in the pipeline — must be stored encrypted
-        aiApiKey: encryptIfNeeded(process.env.AI_API_KEY || "ollama"),
-        maxTokens: 500,
+        aiApiKey: adminConfig?.aiApiKey ?? encryptIfNeeded(process.env.AI_API_KEY || "ollama"),
+        maxTokens: adminConfig?.maxTokens ?? 500,
       });
 
       return { success: true, id: newUserId };

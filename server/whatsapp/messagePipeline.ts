@@ -2,10 +2,11 @@ import { getInsertId } from "../utils.js";
 import { db } from "../db.js";
 import {
   botConfig, conversations, templates,
-  customers, escalationRules, spamLogs, rateLimits, users, appointments, services, systemSettings,
+  customers, escalationRules, spamLogs, rateLimits, users, appointments, services, systemSettings, staff,
 } from "../../drizzle/schema.js";
 import { eq, and, sql, desc, gt, or, asc } from "drizzle-orm";
 import { callAiWithFallback } from "../services/dualAiService.js";
+import { callClaudeAPI } from "../services/claudeAiService.js";
 import { decrypt } from "../services/encryptionService.js";
 import { getRelevantContext, type KBResult } from "../services/knowledgeRetrieval.js";
 import { handleBookingFlow } from "../services/bookingFlow.js";
@@ -1765,7 +1766,7 @@ async function generateAIResponse(
   isPersonalMessage = false,
   sessionMode?: BibleSessionMode,
   sessionTopic = "",
-): Promise<{ response: string; language: string; sentiment: string; modelUsed: "groq" | "ollama"; usedFallback: boolean; responseTime: number } | null> {
+): Promise<{ response: string; language: string; sentiment: string; modelUsed: "groq" | "ollama" | "claude"; usedFallback: boolean; responseTime: number } | null> {
   try {
     const apiUrl = config.aiApiUrl || process.env.AI_API_URL || "http://localhost:11434/v1";
     const apiKey = decrypt(config.aiApiKey || "") || process.env.AI_API_KEY || "ollama";
@@ -1804,6 +1805,49 @@ async function generateAIResponse(
       ? customerMemory.slice(0, 400) + "…"
       : customerMemory;
 
+    // ── Fetch customer appointments for context (for cancellation, rescheduling, etc.) ──
+    const appointmentKeywords = ["cancel", "reschedule", "modify", "change", "move", "appointment", "booking", "schedule"];
+    const messageHasAppointmentKeyword = appointmentKeywords.some(kw =>
+      msg.messageText.toLowerCase().includes(kw)
+    );
+
+    let appointmentContext = "";
+    if (messageHasAppointmentKeyword) {
+      // Get customer ID from phone
+      const [customer] = await db.select({ id: customers.id }).from(customers)
+        .where(and(eq(customers.tenantId, msg.tenantId), eq(customers.phoneNumber, msg.phoneNumber)))
+        .limit(1);
+
+      if (customer) {
+        // Fetch upcoming appointments (next 30 days)
+        const upcomingAppointments = await db.select({
+          id: appointments.id,
+          date: appointments.date,
+          time: appointments.time,
+          status: appointments.status,
+          serviceName: services.name,
+          staffName: staff.name,
+        })
+          .from(appointments)
+          .innerJoin(services, eq(appointments.serviceId, services.id))
+          .leftJoin(staff, eq(appointments.staffId, staff.id))
+          .where(and(
+            eq(appointments.customerId, customer.id),
+            eq(appointments.status, "scheduled"),
+          ))
+          .orderBy(asc(appointments.date), asc(appointments.time))
+          .limit(5);
+
+        if (upcomingAppointments.length > 0) {
+          appointmentContext = "\n\nCUSTOMER'S UPCOMING APPOINTMENTS:\n";
+          for (const apt of upcomingAppointments) {
+            appointmentContext += `- ${apt.date} at ${apt.time}: ${apt.serviceName}${apt.staffName ? ` with ${apt.staffName}` : ""}\n`;
+          }
+          appointmentContext += "The customer may reference these appointments when asking to cancel or reschedule. Use this information to provide accurate, personalized responses.\n";
+        }
+      }
+    }
+
     // Build a knowledge-confidence instruction based on how well the KB matched
     const kbConfidenceInstruction =
       kbResult.confidence === "high"
@@ -1831,6 +1875,7 @@ async function generateAIResponse(
       trimmedMemory +            // ← persistent memory of this customer (trimmed)
       kbContext +                // ← relevant KB articles (trimmed)
       kbConfidenceInstruction +  // ← tells AI how confident to be about its KB answer
+      appointmentContext +       // ← customer's upcoming appointments (if relevant)
       `\n\nCURRENCY: Always use South African Rand (R) for all prices and amounts. Never use $ (dollars), € (euros), or any other currency. Example: "R299 per month" not "$299".` +
       `\n\nCUSTOMER NAME: Never address the customer by name or assume their name unless they have explicitly told you their name during this conversation. Do not use names from any other source.` +
       `\n\nCLARIFICATION RULES — follow these every time the customer's message is unclear:\n` +
@@ -1906,7 +1951,7 @@ async function generateAIResponse(
           `- After your motivational message, ask ONE energising question to keep the momentum going (e.g. "What is one step you can take TODAY to move towards that goal?").\n` +
           `- Keep replies focused and punchy — 4-6 sentences. Energy is contagious. A Bible verse will be offered at the end.\n`
         : "") +
-      `\n\nAPPOINTMENTS: You cannot book, reschedule, or cancel appointments yourself — the booking system handles that automatically when the customer uses the right trigger words. Your role is to understand the situation from the conversation history and respond helpfully:\n- If the customer is asking to make a NEW appointment → tell them to say "I want to book an appointment"\n- If the customer is asking about an EXISTING appointment they already have → answer their question using the conversation history and customer memory\n- If the customer mentions rescheduling → tell them to say "Reschedule"\n- NEVER say "I've booked you in", "you're confirmed", or imply you made a booking yourself`;
+      `\n\nAPPOINTMENTS: You cannot book, reschedule, or cancel appointments yourself — the booking system handles that automatically when the customer uses the right trigger words. Your role is to understand the situation from the conversation history and the appointment details provided above, then respond helpfully:\n- If the customer is asking to make a NEW appointment → tell them to say "I want to book an appointment"\n- If the customer is asking about an EXISTING appointment → reference their specific appointment details from above and answer their question\n- If the customer wants to CANCEL an appointment → acknowledge the specific appointment they mentioned (e.g., "Your ${date} ${time} appointment for ${serviceName}") and tell them to say "I want to cancel my appointment"\n- If the customer wants to RESCHEDULE → acknowledge which appointment they're referring to and tell them to say "I want to reschedule my appointment"\n- When a customer says "that appointment" or "it" or "my booking" → use context from above to know exactly which one they mean\n- NEVER say "I've booked you in", "you're confirmed", or imply you made a booking yourself`;
 
     // ── Token-budget enforcement ──────────────────────────────────────────────
     // Gemma 4 supports 128K natively, but Ollama defaults to only 2048 num_ctx.
@@ -1967,36 +2012,82 @@ async function generateAIResponse(
 
     console.log(`🤖 Sending to ${model} @ ${apiUrl} | history=${chronological.length}${droppedCount > 0 ? ` (trimmed ${droppedCount})` : ""} | ~${approxTokens} tokens | memory=${trimmedMemory.length > 0 ? "✓" : "none"}`);
 
-    // Call AI with dual model fallback (Groq primary → Ollama fallback)
-    const aiResult = await callAiWithFallback(
-      messages,
-      {
-        model,
-        apiUrl,
-        apiKey,
-      },
-      {
-        enabled: fallbackAiEnabled,
-        model: fallbackModel,
-        apiUrl: fallbackApiUrl,
-        apiKey: fallbackApiKey,
-      },
-      {
-        tenantId: msg.tenantId,
-        primaryTimeout: 3000,
-        fallbackTimeout: 8000,
-        logFallback: true,
-        maxTokens: safeMaxTokens,
-        aiTemperature: config.aiTemperature?.toString(),
+    // ── Determine which AI provider to use ─────────────────────────────────────
+    const aiProvider = config.aiProvider || "groq";
+    let response: string;
+    let modelUsed: "groq" | "ollama" | "claude";
+    let usedFallback = false;
+    const startAiTime = Date.now();
+
+    if (aiProvider === "claude") {
+      // ── Call Claude API ──────────────────────────────────────────────────────
+      const claudeApiKey = decrypt(config.claudeApiKey || "") || process.env.CLAUDE_API_KEY || "";
+      const claudeModel = config.claudeModel || "claude-3-5-sonnet-20241022";
+
+      if (!claudeApiKey) {
+        console.error("❌ Claude API key not configured for this tenant");
+        response = "I apologize, but Claude AI is not properly configured. Please contact the administrator.";
+      } else {
+        try {
+          // Build system prompt (join systemPrompt with customer memory for context)
+          const fullSystemPrompt = systemPrompt +
+            (trimmedMemory.length > 0 ? `\n\n[Customer Context: ${trimmedMemory}]` : "");
+
+          // Convert messages to string format for Claude (systemPrompt is already first message)
+          const userMessage = msg.messageText;
+
+          console.log(`🎯 Calling Claude (${claudeModel}) with ${messages.length} messages`);
+
+          const claudeResponse = await callClaudeAPI({
+            systemPrompt: fullSystemPrompt,
+            userMessage,
+            apiKey: claudeApiKey,
+            model: claudeModel,
+            maxTokens: safeMaxTokens,
+            temperature: parseFloat(config.aiTemperature?.toString() || "0.7"),
+          });
+
+          response = claudeResponse || "I apologize, I couldn't process your message. Please try again.";
+          modelUsed = "claude";
+          console.log(`✅ Claude responded in ${Date.now() - startAiTime}ms`);
+        } catch (claudeError: any) {
+          console.error(`❌ Claude API call failed:`, claudeError.message);
+          response = "I apologize, I couldn't process your message. Please try again.";
+          modelUsed = "claude";
+        }
       }
-    );
+    } else {
+      // ── Call Groq or Ollama with fallback ────────────────────────────────────
+      const aiResult = await callAiWithFallback(
+        messages,
+        {
+          model,
+          apiUrl,
+          apiKey,
+        },
+        {
+          enabled: fallbackAiEnabled,
+          model: fallbackModel,
+          apiUrl: fallbackApiUrl,
+          apiKey: fallbackApiKey,
+        },
+        {
+          tenantId: msg.tenantId,
+          primaryTimeout: 3000,
+          fallbackTimeout: 8000,
+          logFallback: true,
+          maxTokens: safeMaxTokens,
+          aiTemperature: config.aiTemperature?.toString(),
+        }
+      );
 
-    const response = aiResult.response
-      || "I apologize, I couldn't process your message. Please try again.";
+      response = aiResult.response
+        || "I apologize, I couldn't process your message. Please try again.";
 
-    // Track which model was used
-    const modelUsed = aiResult.model === "ollama" ? "ollama" : "groq";
-    const usedFallback = aiResult.usedFallback;
+      // Track which model was used
+      modelUsed = aiResult.model === "ollama" ? "ollama" : "groq";
+      usedFallback = aiResult.usedFallback;
+    }
 
     // Log fallback usage and update tracking
     if (usedFallback) {

@@ -15,12 +15,13 @@ import path from "path";
 export const adminRouter = router({
   // Get overview of all tenants: user info + WhatsApp state + message stats
   getTenantOverview: adminProcedure.query(async () => {
-    // Get all non-admin users
+    // Get all non-admin users (including unverified)
     const tenants = await db.select({
       id: users.id,
       name: users.name,
       email: users.email,
       isActive: users.isActive,
+      emailVerified: users.emailVerified,
       createdAt: users.createdAt,
       lastLoginAt: users.lastLoginAt,
     }).from(users).where(eq(users.role, "user"));
@@ -48,6 +49,7 @@ export const adminRouter = router({
         name: tenant.name,
         email: tenant.email,
         isActive: tenant.isActive,
+        emailVerified: tenant.emailVerified,
         createdAt: tenant.createdAt,
         lastLoginAt: tenant.lastLoginAt,
         whatsapp: {
@@ -98,6 +100,57 @@ export const adminRouter = router({
       messages24h: Number(msgs24h.count),
     };
   }),
+
+  // Get full tenant details including verification status
+  getTenantDetail: adminProcedure
+    .input(z.object({ tenantId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const [tenant] = await db.select({
+        id: users.id,
+        name: users.name,
+        email: users.email,
+        isActive: users.isActive,
+        emailVerified: users.emailVerified,
+        createdAt: users.createdAt,
+        lastLoginAt: users.lastLoginAt,
+      }).from(users).where(eq(users.id, input.tenantId)).limit(1);
+
+      if (!tenant) return null;
+      return tenant;
+    }),
+
+  // Approve a tenant's email (activate account)
+  approveTenant: adminProcedure
+    .input(z.object({ tenantId: z.number().int().positive() }))
+    .mutation(async ({ input }) => {
+      const [user] = await db.select({ emailVerified: users.emailVerified })
+        .from(users).where(eq(users.id, input.tenantId)).limit(1);
+
+      if (!user) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
+      }
+
+      if (user.emailVerified) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "User already verified" });
+      }
+
+      // Approve and start trial
+      const trialStart = new Date();
+      const trialEnd = new Date(trialStart);
+      trialEnd.setDate(trialEnd.getDate() + 14);
+
+      await db.update(users).set({
+        emailVerified: true,
+        emailVerificationCode: null,
+        emailVerificationExpires: null,
+        trialStartDate: trialStart,
+        trialEndDate: trialEnd,
+        accountStatus: "trial_active",
+        updatedAt: new Date(),
+      }).where(eq(users.id, input.tenantId));
+
+      return { success: true, message: "User approved and trial started" };
+    }),
 
   // ── Tenant config management ────────────────────────────────────────────────
 

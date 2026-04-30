@@ -1,16 +1,17 @@
 import { getInsertId } from "../utils.js";
 import { encryptIfNeeded } from "../services/encryptionService.js";
 import { z } from "zod";
-import { router, publicProcedure, protectedProcedure } from "../trpc.js";
+import { router, publicProcedure, protectedProcedure, adminProcedure } from "../trpc.js";
 import { db } from "../db.js";
 import { users, botConfig } from "../../drizzle/schema.js";
-import { eq } from "drizzle-orm";
+import { eq, and, isNotNull } from "drizzle-orm";
 import { signToken, verifyPassword, hashPassword, timingSafeEqual } from "../auth.js";
 import { checkTwoFaRateLimit, resetTwoFaRateLimit, recordFailedLogin, resetFailedLogins, getFailedLoginCount } from "../middleware/rateLimiter.js";
 import { TRPCError } from "@trpc/server";
 import crypto from "crypto";
 import { sendAlert } from "../services/alertService.js";
 import { issueVerificationCode, checkVerificationCode } from "../services/emailVerificationService.js";
+import { issueApprovalCode, approveSignup, declineSignup } from "../services/adminApprovalService.js";
 import {
   generateTotpSecret,
   buildOtpAuthUri,
@@ -64,10 +65,11 @@ export const authRouter = router({
 
       // Block login if email not yet verified (admin accounts are pre-verified)
       if (user.role !== "admin" && !user.emailVerified) {
+        // Check if they're pending admin approval (have a verification code)
+        const hasPendingApproval = user.emailVerificationCode !== null && user.emailVerificationCode !== undefined;
         throw new TRPCError({
           code: "FORBIDDEN",
-          message: "EMAIL_NOT_VERIFIED",
-          // Include email so the frontend can redirect straight to the verify page
+          message: hasPendingApproval ? "PENDING_ADMIN_APPROVAL" : "EMAIL_NOT_VERIFIED",
         });
       }
 
@@ -426,6 +428,11 @@ export const authRouter = router({
       email:        z.string().email(),
       password:     z.string().min(8, "Password must be at least 8 characters"),
       phone:        z.string().optional(),
+      timezone:     z.string().default("Africa/Johannesburg"),
+      businessHoursEnabled: z.boolean().default(false),
+      businessHoursStart: z.string().default("09:00"),
+      businessHoursEnd: z.string().default("17:00"),
+      afterHoursMessage: z.string().default(""),
     }))
     .mutation(async ({ input }) => {
       // Check email not taken
@@ -434,9 +441,18 @@ export const authRouter = router({
 
       if (existing) {
         if (!existing.emailVerified) {
-          // Account exists but never verified — resend a fresh code instead of erroring
-          await issueVerificationCode(existing.id, input.email, input.name, true);
-          return { requiresVerification: true as const, email: input.email };
+          // Account exists but never verified — reissue approval code to admin
+          try {
+            await issueApprovalCode(existing.id, input.email, input.name, input.businessName);
+          } catch (err) {
+            console.error("Error reissuing approval code:", err);
+            // Continue anyway
+          }
+          return {
+            requiresVerification: true as const,
+            email: input.email,
+            pendingAdminApproval: true as const,
+          };
         }
         throw new TRPCError({ code: "CONFLICT", message: "An account with this email already exists." });
       }
@@ -471,20 +487,33 @@ export const authRouter = router({
 
       await db.insert(botConfig).values({
         tenantId,
-        businessName:      input.businessName,
-        systemPrompt:      `You are a professional AI receptionist for ${input.businessName}. Be helpful, friendly, and concise.`,
-        afterHoursMessage: `Hi! We're currently outside business hours. We'll get back to you soon. 🙏`,
+        businessName:       input.businessName,
+        systemPrompt:       `You are a professional AI receptionist for ${input.businessName}. Be helpful, friendly, and concise.`,
+        timezone:           input.timezone,
+        enableBusinessHours: input.businessHoursEnabled,
+        businessHoursStart: input.businessHoursStart,
+        businessHoursEnd:   input.businessHoursEnd,
+        afterHoursMessage:  input.afterHoursMessage || `Hi! We're currently outside business hours. We'll get back to you soon. 🙏`,
         aiApiUrl,          // ✅ Always has a value (env or Groq fallback)
         aiApiKey,          // ✅ Always has a value (encrypted env or empty string)
         aiModel,           // ✅ Always has a value (env or gemma4:latest)
         updatedAt:         new Date(),
       });
 
-      // Generate OTP, hash + store it, send email
-      await issueVerificationCode(tenantId, input.email, input.name);
+      // Generate approval code for admin review
+      try {
+        await issueApprovalCode(tenantId, input.email, input.name, input.businessName);
+      } catch (err) {
+        console.error("Error issuing approval code:", err);
+        // Continue anyway - user still gets the approval flow
+      }
 
-      // No cookie yet — user must verify first
-      return { requiresVerification: true as const, email: input.email };
+      // No cookie yet — user must be approved by admin first
+      return {
+        requiresVerification: true as const,
+        email: input.email,
+        pendingAdminApproval: true as const,
+      };
     }),
 
   // ── Verify email OTP ───────────────────────────────────────────────────────
@@ -587,5 +616,64 @@ export const authRouter = router({
       }
 
       return { success: true };
+    }),
+
+  // ── List pending signups (admin only) ──────────────────────────────────────
+  // Shows all users awaiting admin approval
+  pendingSignups: adminProcedure.query(async () => {
+    const pending = await db
+      .select({
+        id: users.id,
+        email: users.email,
+        name: users.name,
+        createdAt: users.createdAt,
+      })
+      .from(users)
+      .where(
+        // Match: emailVerified = false AND emailVerificationCode is not null (code was issued)
+        and(
+          eq(users.emailVerified, false),
+          isNotNull(users.emailVerificationCode)
+        )
+      )
+      .orderBy(users.createdAt);
+
+    return pending;
+  }),
+
+  // ── Admin approval for new signups ─────────────────────────────────────────
+  // Called by admin clicking "Approve" in the admin receptionist dashboard
+  // Marks the user's email as verified and starts their trial
+  approveSignup: adminProcedure
+    .input(z.object({
+      userId: z.number(),
+    }))
+    .mutation(async ({ input }) => {
+      const result = await approveSignup(input.userId);
+      if (!result.success) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: result.reason || "Failed to approve signup",
+        });
+      }
+      return { success: true, message: "User account approved and trial started" };
+    }),
+
+  // ── Admin decline for new signups ──────────────────────────────────────────
+  // Called by admin clicking "Decline" in the admin receptionist dashboard
+  // Deletes the user account entirely
+  declineSignup: adminProcedure
+    .input(z.object({
+      userId: z.number(),
+    }))
+    .mutation(async ({ input }) => {
+      const result = await declineSignup(input.userId);
+      if (!result.success) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: result.reason || "Failed to decline signup",
+        });
+      }
+      return { success: true, message: "Signup declined and account deleted" };
     }),
 });

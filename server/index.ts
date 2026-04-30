@@ -5,6 +5,10 @@ import { validateConfig } from "./config.js";
 // ── Validate configuration at startup (fail fast if env vars missing) ─────────
 validateConfig();
 
+// ── Initialize error monitoring (Sentry) ─────────────────────────────────────
+import { initSentry, Sentry, isSentryEnabled } from "./services/sentryService.js";
+initSentry();
+
 import crypto from "crypto";
 import express from "express";
 import { createServer } from "http";
@@ -20,6 +24,8 @@ import { startFeaturesScheduler } from "./services/featuresScheduler.js";
 import { startTrialScheduler } from "./services/trialService.js";
 import { confirmPayment, verifyWebhookSignature } from "./services/easypayService.js";
 import { authLimiter, apiLimiter, webhookLimiter, receptionistLimiter, adminLimiter } from "./middleware/rateLimiter.js";
+import { securityHeaders, validateRequestHeaders, preventParameterPollution } from "./middleware/security.js";
+import { handleHealthCheck, startHealthCheckScheduler } from "./services/healthCheck.js";
 import cors from "cors";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
@@ -71,6 +77,12 @@ process.on("uncaughtException", (err: Error) => {
 const app = express();
 const httpServer = createServer(app);
 
+// ── Sentry Request Tracing ───────────────────────────────────────────────────
+if (isSentryEnabled()) {
+  app.use(Sentry.Handlers.requestHandler());
+  app.use(Sentry.Handlers.tracingHandler());
+}
+
 const uploadTypeMap = {
   ".pdf": "pdf",
   ".docx": "docx",
@@ -87,7 +99,12 @@ function getKnowledgeBaseType(filename: string): "pdf" | "docx" | "txt" {
 // Socket.IO
 const allowedOrigins = process.env.NODE_ENV === "production"
   ? [process.env.VITE_API_URL, process.env.APP_URL].filter(Boolean) as string[]
-  : ["http://localhost:5173", "http://localhost:3000"];
+  : [
+      "http://localhost:5173",
+      "http://localhost:3000",
+      "https://cyclist-majorette-ripeness.ngrok-free.dev",
+      /^https:\/\/.*\.ngrok(-free)?\.dev$/,  // Allow any ngrok domain
+    ];
 
 export const io = new Server(httpServer, {
   cors: { origin: allowedOrigins, methods: ["GET", "POST"], credentials: true },
@@ -154,6 +171,11 @@ app.use(helmet({
 
 // Remove server fingerprinting headers
 app.disable("x-powered-by");
+
+// ── Security Middleware (prompt injection detection, header validation, etc.) ──
+app.use(securityHeaders);
+app.use(validateRequestHeaders);
+app.use(preventParameterPollution);
 
 app.use(cors({
   origin: allowedOrigins,
@@ -382,10 +404,22 @@ app.use(/^\/api\/trpc\/liveReceptionist/, receptionistLimiter); // public AI cha
 app.use("/api/trpc", apiLimiter);                              // general API
 app.use("/api/webhooks/whatsapp", webhookLimiter);             // Meta webhook
 
-// ── Health check endpoint ──────────────────────────────────────────────────
-app.get("/health", (_req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
+// ── Health check endpoint (monitors memory, DB, API metrics) ──────────────────
+app.get("/health", async (_req, res) => {
+  try {
+    await handleHealthCheck(_req, res);
+  } catch (err) {
+    console.error("Health check error:", err);
+    res.status(503).json({
+      status: "unhealthy",
+      message: "Health check failed",
+      timestamp: new Date().toISOString()
+    });
+  }
 });
+
+// Start periodic health check scheduler (every 60 seconds)
+startHealthCheckScheduler(60000);
 
 // ── tRPC ───────────────────────────────────────────────────────────────────
 app.use(
@@ -685,6 +719,12 @@ async function startServer() {
     await runAutoMigrations();
   } catch (err) {
     console.error("⚠️  Auto-migration error (server will still start):", (err as any).message);
+  }
+
+  // ── Sentry Error Handler ──────────────────────────────────────────────────
+  // Must be registered after all other middleware
+  if (isSentryEnabled()) {
+    app.use(Sentry.Handlers.errorHandler());
   }
 
   // Start the server

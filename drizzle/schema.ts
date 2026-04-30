@@ -54,7 +54,12 @@ export const users = mysqlTable("users", {
   emailVerificationAttempts:      int("email_verification_attempts").default(0).notNull(), // brute-force counter
   emailVerificationResendCount:   int("email_verification_resend_count").default(0).notNull(),
   emailVerificationResendWindowAt: datetime("email_verification_resend_window_at"), // window start for resend rate-limit
-});
+}, (t) => ({
+  emailVerifiedIdx: index("idx_users_email_verified").on(t.emailVerified),
+  accountStatusIdx: index("idx_users_account_status").on(t.accountStatus),
+  isActiveIdx: index("idx_users_is_active").on(t.isActive),
+  createdAtIdx: index("idx_users_created_at").on(t.createdAt),
+}));
 
 // BOT CONFIG
 export const botConfig = mysqlTable("bot_config", {
@@ -72,9 +77,12 @@ export const botConfig = mysqlTable("bot_config", {
   whatsappBusinessAccountId: varchar("whatsapp_business_account_id", { length: 255 }).default("").notNull(),
   whatsappAccessToken: text("whatsapp_access_token").default("").notNull(),
   whatsappWebhookToken: varchar("whatsapp_webhook_token", { length: 255 }).default("").notNull(),
+  aiProvider: mysqlEnum("ai_provider", ["groq", "claude", "ollama"]).default("groq").notNull(),
   aiModel: varchar("ai_model", { length: 100 }).default("llama3.2").notNull(),
   aiApiUrl: varchar("ai_api_url", { length: 255 }).default("http://localhost:11434/v1").notNull(),
   aiApiKey: text("ai_api_key").default("ollama").notNull(),
+  claudeApiKey: text("claude_api_key").default("").notNull(),
+  claudeModel: varchar("claude_model", { length: 100 }).default("claude-3-5-sonnet-20241022").notNull(),
   aiTemperature: decimal("ai_temperature", { precision: 3, scale: 2 }).default("0.7").notNull(),
   maxTokens: int("max_tokens").default(500).notNull(),
   language: varchar("language", { length: 10 }).default("en").notNull(),
@@ -157,6 +165,7 @@ export const botConfig = mysqlTable("bot_config", {
   updatedAt: datetime("updated_at").notNull().$defaultFn(() => new Date()),
 }, (t) => ({
   tenantIdIdx: index("idx_bot_config_tenant").on(t.tenantId),
+  tenantOnboardingIdx: index("idx_bot_config_tenant_onboarding").on(t.tenantId, t.onboardingCompleted),
 }));
 
 // SYSTEM SETTINGS — Global defaults for all tenants (admin-managed)
@@ -223,6 +232,9 @@ export const conversations = mysqlTable("conversations", {
   createdAt: datetime("created_at").notNull().$defaultFn(() => new Date()),
 }, (t) => ({
   tenantPhoneCreatedIdx: index("idx_conv_tenant_phone_created").on(t.tenantId, t.phoneNumber, t.createdAt),
+  tenantIdx: index("idx_conv_tenant").on(t.tenantId),
+  tenantSourceIdx: index("idx_conv_tenant_source").on(t.tenantId, t.source),
+  tenantResolvedIdx: index("idx_conv_tenant_resolved").on(t.tenantId, t.isResolved),
   phoneIdx: index("phone_idx").on(t.phoneNumber),
   createdAtIdx: index("created_at_idx").on(t.createdAt),
   sourceIdx: index("source_idx").on(t.source),
@@ -299,6 +311,7 @@ export const customers = mysqlTable("customers", {
 // SERVICES
 export const services = mysqlTable("services", {
   id: int("id").primaryKey().autoincrement(),
+  tenantId: int("tenant_id").notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
   duration: int("duration").default(60).notNull(),
@@ -311,6 +324,7 @@ export const services = mysqlTable("services", {
 // APPOINTMENTS
 export const appointments = mysqlTable("appointments", {
   id: int("id").primaryKey().autoincrement(),
+  tenantId: int("tenant_id").notNull(),
   customerId: int("customer_id").notNull(),
   serviceId: int("service_id").notNull(),
   date: varchar("date", { length: 10 }).notNull(),
@@ -334,6 +348,10 @@ export const appointments = mysqlTable("appointments", {
   createdAt: datetime("created_at").notNull().$defaultFn(() => new Date()),
   updatedAt: datetime("updated_at").notNull().$defaultFn(() => new Date()),
 }, (t) => ({
+  tenantDateIdx: index("idx_apt_tenant_date").on(t.tenantId, t.date),
+  tenantStatusIdx: index("idx_apt_tenant_status").on(t.tenantId, t.status),
+  customerTenantIdx: index("idx_apt_customer_tenant").on(t.customerId, t.tenantId),
+  tenantDateStatusIdx: index("idx_apt_tenant_date_status").on(t.tenantId, t.date, t.status),
   dateIdx: index("date_idx").on(t.date),
   customerIdx: index("customer_idx").on(t.customerId),
 }));
@@ -394,7 +412,11 @@ export const conversationAssignments = mysqlTable("conversation_assignments", {
   resolvedAt: datetime("resolved_at"),
   status: mysqlEnum("status", ["active", "resolved", "transferred"]).default("active").notNull(),
   notes: text("notes"),
-});
+}, (t) => ({
+  conversationIdx: index("idx_conv_assign_conv").on(t.conversationId),
+  agentIdx: index("idx_conv_assign_agent").on(t.agentId),
+  statusIdx: index("idx_conv_assign_status").on(t.status),
+}));
 
 // AGENT METRICS
 export const agentMetrics = mysqlTable("agent_metrics", {

@@ -19,6 +19,9 @@ export default function Login() {
       if (err.message === '2FA_REQUIRED') {
         setNeed2FA(true);
         setError('');
+      } else if (err.message === 'PENDING_ADMIN_APPROVAL') {
+        // Redirect to pending approval page
+        navigate(`/pending-approval?email=${encodeURIComponent(email)}`);
       } else if (err.message === 'EMAIL_NOT_VERIFIED') {
         // Redirect to verify page — they can resend from there
         navigate(`/verify-email?email=${encodeURIComponent(email)}`);

@@ -13,7 +13,6 @@ import Analytics from "./pages/Analytics";
 import Appointments from "./pages/Appointments";
 import Profile from "./pages/Profile";
 import UserManagement from "./pages/UserManagement";
-import TenantSetup from "./pages/TenantSetup";
 import ReceptionistSetup from "./pages/ReceptionistSetup";
 import Inbox from "./pages/Inbox";
 import Billing from "./pages/Billing";
@@ -30,6 +29,7 @@ import Feedback from "./pages/Feedback";
 import LoyaltyPage from "./pages/Loyalty";
 import ManageBooking from "./pages/ManageBooking";
 import PromptAI from "./pages/PromptAI";
+import SystemPromptGenerator from "./pages/SystemPromptGenerator";
 import LandingPage from "./pages/LandingPage";
 import Register from "./pages/Register";
 import NotFound from "./pages/NotFound";
@@ -42,6 +42,8 @@ import Pricing from "./pages/Pricing";
 import UpgradeRequired from "./pages/UpgradeRequired";
 import VerifyEmail from "./pages/VerifyEmail";
 import BusinessRules from "./pages/BusinessRules";
+import AdminSignupApproval from "./pages/AdminSignupApproval";
+import PendingApproval from "./pages/PendingApproval";
 
 // Routes that locked-out users can still access inside the Layout
 const ALLOWED_LOCKED_PATHS = ["/billing", "/pricing", "/upgrade", "/profile"];
@@ -127,6 +129,7 @@ function AppRoutes() {
       <Route path="/accept-invite" element={<AcceptInvite />} />
       <Route path="/forgot-password" element={<ResetPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/pending-approval" element={<PendingApproval />} />
       <Route path="/book/:slug" element={<BookingPage />} />
       <Route path="/manage/:token" element={<ManageBooking />} />
       <Route path="/verify-email" element={<VerifyEmail />} />
@@ -145,7 +148,6 @@ function AppRoutes() {
         <Route path="configuration" element={<AdminRoute><Configuration /></AdminRoute>} />
         <Route path="profile" element={<Profile />} />
         <Route path="user-management" element={<UserManagement />} />
-        <Route path="tenant-setup" element={<TenantSetup />} />
         <Route path="receptionist-setup" element={<ReceptionistSetup />} />
         <Route path="inbox" element={<Inbox />} />
         <Route path="billing" element={<Billing />} />
@@ -159,7 +161,9 @@ function AppRoutes() {
         <Route path="feedback" element={<Feedback />} />
         <Route path="loyalty" element={<LoyaltyPage />} />
         <Route path="prompt-ai" element={<PromptAI />} />
+        <Route path="system-prompt-generator" element={<SystemPromptGenerator />} />
         <Route path="business-rules" element={<BusinessRules />} />
+        <Route path="signup-approvals" element={<AdminRoute><AdminSignupApproval /></AdminRoute>} />
       </Route>
       <Route path="*" element={<NotFound />} />
     </Routes>

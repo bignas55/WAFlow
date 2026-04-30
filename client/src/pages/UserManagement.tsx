@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from "react";
 import { trpc } from "../lib/trpc";
 import { useAuth } from "../hooks/useAuth";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import {
   UserPlus, Pencil, Trash2, Power, PowerOff, X, CheckCircle,
   AlertCircle, Shield, User, Mail, Lock, Eye, EyeOff, Users,
-  Smartphone, QrCode, Wifi, WifiOff, Loader2, RefreshCw,
+  Smartphone, QrCode, Wifi, WifiOff, Loader2, RefreshCw, Settings, Search,
+  MessageSquare, FileText, Clock, Sparkles,
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -18,6 +20,7 @@ interface UserRow {
   role: Role;
   subRole?: SubRole | null;
   isActive: boolean;
+  emailVerified: boolean;
   lastLoginAt: Date | null;
   createdAt: Date;
 }
@@ -200,30 +203,290 @@ function UserModal({
   );
 }
 
-// ── Confirm Delete Modal ───────────────────────────────────────────────────
-function ConfirmDelete({ user, onConfirm, onCancel }: { user: UserRow; onConfirm: () => void; onCancel: () => void }) {
+// ── User Detail Modal ───────────────────────────────────────────────────
+type DetailTab = "info" | "ai" | "templates" | "knowledge-base" | "business-hours";
+
+function UserDetailModal({
+  user,
+  onClose,
+  onApprove,
+  isApproving,
+}: {
+  user: UserRow;
+  onClose: () => void;
+  onApprove: () => void;
+  isApproving: boolean;
+}) {
+  const [activeTab, setActiveTab] = useState<DetailTab>("info");
+  const [aiForm, setAiForm] = useState({ systemPrompt: "", aiModel: "gemma4:latest" });
+
+  const { data: botConfig } = trpc.botConfig.get.useQuery(
+    { tenantId: user.id },
+    { enabled: !!user.id && user.emailVerified }
+  );
+
+  const updateAIMutation = trpc.admin.updateTenantConfig.useMutation({
+    onSuccess: () => {
+      // Success handled by parent
+    },
+  });
+
+  const generatePrompt = trpc.promptExpert.generate.useMutation({
+    onSuccess: (data) => {
+      if (data?.prompt) {
+        setAiForm(f => ({ ...f, systemPrompt: data.prompt }));
+      }
+    },
+  });
+
+  // Load AI config when botConfig is fetched
+  useEffect(() => {
+    if (botConfig) {
+      setAiForm({
+        systemPrompt: botConfig.systemPrompt || "",
+        aiModel: botConfig.aiModel || "gemma4:latest",
+      });
+    }
+  }, [botConfig]);
+
+  const handleSaveAI = () => {
+    if (!aiForm.systemPrompt.trim()) return;
+    updateAIMutation.mutate({
+      tenantId: user.id,
+      systemPrompt: aiForm.systemPrompt.trim(),
+      aiModel: aiForm.aiModel.trim(),
+    });
+  };
+
+  const TABS: Array<{ id: DetailTab; label: string; icon: any }> = [
+    { id: "info", label: "User Info", icon: User },
+    ...(user.emailVerified ? [
+      { id: "ai", label: "AI & Prompt", icon: MessageSquare },
+      { id: "templates", label: "Templates", icon: FileText },
+      { id: "knowledge-base", label: "Knowledge Base", icon: FileText },
+      { id: "business-hours", label: "Business Hours", icon: Clock },
+    ] : []),
+  ];
+
   return (
     <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
-      <div className="bg-gray-900 rounded-xl border border-gray-700 w-full max-w-sm shadow-2xl p-6 text-center">
-        <div className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
-          <Trash2 className="w-6 h-6 text-red-400" />
+      <div className="bg-gray-900 rounded-xl border border-gray-700 w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-hidden flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between p-6 border-b border-gray-800 flex-shrink-0">
+          <div>
+            <h2 className="text-white font-semibold text-lg">{user.name}</h2>
+            <p className="text-gray-400 text-xs mt-1">{user.email}</p>
+          </div>
+          <button onClick={onClose} className="text-gray-500 hover:text-white transition-colors">
+            <X className="w-5 h-5" />
+          </button>
         </div>
-        <h3 className="text-white font-semibold text-lg mb-2">Delete User</h3>
-        <p className="text-gray-400 text-sm mb-6">
-          Are you sure you want to permanently delete <strong className="text-white">{user.name}</strong>? This action cannot be undone.
-        </p>
-        <div className="flex gap-3">
-          <button onClick={onCancel}
-            className="flex-1 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium rounded-lg transition-colors">
-            Cancel
+
+        {/* Tabs */}
+        <div className="border-b border-gray-800 bg-gray-900/50 px-6 flex gap-1 overflow-x-auto flex-shrink-0">
+          {TABS.map(tab => {
+            const TabIcon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-colors whitespace-nowrap text-sm font-medium ${
+                  isActive
+                    ? "border-[#25D366] text-white"
+                    : "border-transparent text-gray-400 hover:text-gray-300"
+                }`}
+              >
+                <TabIcon className="w-4 h-4" />
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          {/* User Info Tab */}
+          {activeTab === "info" && (
+            <div className="space-y-5">
+              <div>
+                <label className="text-xs text-gray-400 uppercase tracking-wider font-medium">Full Name</label>
+                <p className="text-white font-medium mt-2">{user.name}</p>
+              </div>
+
+              <div>
+                <label className="text-xs text-gray-400 uppercase tracking-wider font-medium">Email Address</label>
+                <p className="text-white font-medium mt-2 break-all">{user.email}</p>
+              </div>
+
+              {botConfig?.businessName && (
+                <div>
+                  <label className="text-xs text-gray-400 uppercase tracking-wider font-medium">Business Name</label>
+                  <p className="text-white font-medium mt-2">{botConfig.businessName}</p>
+                </div>
+              )}
+
+              <div>
+                <label className="text-xs text-gray-400 uppercase tracking-wider font-medium">Signed Up</label>
+                <p className="text-white font-medium mt-2">
+                  {new Date(user.createdAt).toLocaleDateString("en-ZA", {
+                    day: "2-digit",
+                    month: "short",
+                    year: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </p>
+              </div>
+
+              <div>
+                <label className="text-xs text-gray-400 uppercase tracking-wider font-medium">Status</label>
+                <div className="mt-2">
+                  {user.emailVerified ? (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-[#25D366]/10 text-[#25D366]">
+                      <CheckCircle className="w-4 h-4" />Verified & Active
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-yellow-500/10 text-yellow-400">
+                      <AlertCircle className="w-4 h-4" />Pending Approval
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* AI & Prompt Tab */}
+          {activeTab === "ai" && user.emailVerified && (
+            <div className="space-y-5">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-semibold text-white">
+                    System Prompt <span className="text-red-400">*</span>
+                  </label>
+                  <button
+                    onClick={() => generatePrompt.mutate({ businessName: botConfig?.businessName || user.name })}
+                    disabled={generatePrompt.isPending}
+                    className="text-xs px-3 py-1.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-60 text-white rounded transition-colors flex items-center gap-1.5"
+                    title="Generate prompt using AI"
+                  >
+                    <Sparkles className="w-3 h-3" />
+                    {generatePrompt.isPending ? "Generating..." : "Generate with AI"}
+                  </button>
+                </div>
+                <textarea
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-[#25D366] transition-colors resize-none"
+                  rows={6}
+                  value={aiForm.systemPrompt}
+                  onChange={e => setAiForm(f => ({ ...f, systemPrompt: e.target.value }))}
+                  placeholder="Define how your AI receptionist should behave..."
+                />
+                {generatePrompt.data && (
+                  <p className="text-xs text-gray-400 mt-2">💡 AI-generated prompt loaded. Review and save when ready.</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-white mb-2">AI Model</label>
+                <select
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-[#25D366] transition-colors"
+                  value={aiForm.aiModel}
+                  onChange={e => setAiForm(f => ({ ...f, aiModel: e.target.value }))}
+                >
+                  <option value="gemma4:latest">Gemma 4 (Latest)</option>
+                  <option value="llama3.2">Llama 3.2</option>
+                  <option value="mistral">Mistral</option>
+                  <option value="gpt-4o-mini">GPT-4o Mini</option>
+                </select>
+              </div>
+            </div>
+          )}
+
+          {/* Templates Tab */}
+          {activeTab === "templates" && user.emailVerified && (
+            <div className="text-center py-12">
+              <FileText className="w-12 h-12 text-gray-600 mx-auto mb-3" />
+              <p className="text-gray-400">Templates management coming soon</p>
+            </div>
+          )}
+
+          {/* Knowledge Base Tab */}
+          {activeTab === "knowledge-base" && user.emailVerified && (
+            <div className="text-center py-12">
+              <FileText className="w-12 h-12 text-gray-600 mx-auto mb-3" />
+              <p className="text-gray-400">Knowledge Base management coming soon</p>
+            </div>
+          )}
+
+          {/* Business Hours Tab */}
+          {activeTab === "business-hours" && user.emailVerified && (
+            <div className="text-center py-12">
+              <Clock className="w-12 h-12 text-gray-600 mx-auto mb-3" />
+              <p className="text-gray-400">Business Hours management coming soon</p>
+            </div>
+          )}
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex gap-3 p-6 border-t border-gray-800 flex-shrink-0 bg-gray-900/50">
+          <button
+            onClick={onClose}
+            className="flex-1 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium rounded-lg transition-colors"
+          >
+            Close
           </button>
-          <button onClick={onConfirm}
-            className="flex-1 py-2.5 bg-red-600 hover:bg-red-500 text-white font-medium rounded-lg transition-colors">
-            Delete
-          </button>
+          {activeTab === "ai" && user.emailVerified && (
+            <button
+              onClick={handleSaveAI}
+              disabled={!aiForm.systemPrompt.trim() || updateAIMutation.isPending}
+              className="flex-1 py-2.5 bg-[#25D366] hover:bg-[#20ba57] disabled:opacity-60 text-white font-medium rounded-lg transition-colors"
+            >
+              {updateAIMutation.isPending ? "Saving..." : "Save Changes"}
+            </button>
+          )}
+          {activeTab === "info" && !user.emailVerified && (
+            <button
+              onClick={onApprove}
+              disabled={isApproving}
+              className="flex-1 py-2.5 bg-[#25D366] hover:bg-[#20ba57] disabled:opacity-60 text-white font-medium rounded-lg transition-colors"
+            >
+              {isApproving ? "Approving..." : "Approve User"}
+            </button>
+          )}
         </div>
       </div>
     </div>
+  );
+}
+
+// ── Confirm Delete Dialog ──────────────────────────────────────────────────
+function ConfirmDeleteDialog({
+  isOpen,
+  user,
+  isLoading,
+  onConfirm,
+  onCancel,
+}: {
+  isOpen: boolean;
+  user: UserRow | null;
+  isLoading: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  if (!user) return null;
+
+  return (
+    <ConfirmDialog
+      isOpen={isOpen}
+      type="danger"
+      title="Delete User"
+      message={`Are you sure you want to permanently delete ${user.name}? This action cannot be undone and will remove all associated data.`}
+      confirmLabel="Delete User"
+      cancelLabel="Cancel"
+      isLoading={isLoading}
+      onConfirm={onConfirm}
+      onCancel={onCancel}
+    />
   );
 }
 
@@ -457,8 +720,11 @@ export default function UserManagement() {
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState<UserRow | null>(null);
   const [deletingUser, setDeletingUser] = useState<UserRow | null>(null);
+  const [viewingUser, setViewingUser] = useState<UserRow | null>(null);
   const [toast, setToast] = useState<{ ok: boolean; text: string } | null>(null);
   const [whatsappSetup, setWhatsappSetup] = useState<{ tenantId: number; tenantName: string } | null>(null);
+  const [filterTab, setFilterTab] = useState<"all" | "pending" | "active" | "inactive">("all");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const showToast = (ok: boolean, text: string) => {
     setToast({ ok, text });
@@ -482,6 +748,14 @@ export default function UserManagement() {
     onError: e => showToast(false, e.message),
   });
 
+  const approveTenant = trpc.admin.approveTenant.useMutation({
+    onSuccess: () => {
+      utils.users.list.invalidate();
+      showToast(true, "User approved and trial started!");
+    },
+    onError: e => showToast(false, e.message),
+  });
+
   // Non-admin gets a read-only notice
   if (me?.role !== "admin") {
     return (
@@ -494,18 +768,36 @@ export default function UserManagement() {
   }
 
   const adminCount = userList.filter(u => u.role === "admin").length;
+  const pendingCount = userList.filter(u => !u.emailVerified).length;
+  const activeCount = userList.filter(u => u.isActive).length;
+
+  // Filter users based on tab and search
+  let filteredList = userList;
+  if (filterTab === "pending") {
+    filteredList = userList.filter(u => !u.emailVerified);
+  } else if (filterTab === "active") {
+    filteredList = userList.filter(u => u.isActive && u.emailVerified);
+  } else if (filterTab === "inactive") {
+    filteredList = userList.filter(u => !u.isActive && u.emailVerified);
+  }
+
+  // Apply search filter
+  if (searchQuery) {
+    const query = searchQuery.toLowerCase();
+    filteredList = filteredList.filter(u => u.name.toLowerCase().includes(query) || u.email.toLowerCase().includes(query));
+  }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Header with Title & Add Button */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">User Management</h1>
-          <p className="text-gray-400 text-sm mt-1">{userList.length} user{userList.length !== 1 ? "s" : ""} total</p>
+          <h1 className="text-3xl font-bold text-white">User Management</h1>
+          <p className="text-gray-400 text-sm mt-1">Manage all users, approve new signups, and configure tenant settings</p>
         </div>
         <button
           onClick={() => { setEditingUser(null); setShowModal(true); }}
-          className="flex items-center gap-2 px-4 py-2.5 bg-[#25D366] hover:bg-[#20ba57] text-white font-medium rounded-lg transition-colors"
+          className="flex items-center gap-2 px-4 py-2.5 bg-[#25D366] hover:bg-[#20ba57] text-white font-medium rounded-lg transition-colors flex-shrink-0"
         >
           <UserPlus className="w-4 h-4" />
           Add User
@@ -520,18 +812,55 @@ export default function UserManagement() {
         </div>
       )}
 
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-4">
+      {/* Stats Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {[
           { label: "Total Users", value: userList.length, color: "text-white", bg: "bg-gray-800" },
           { label: "Admins", value: adminCount, color: "text-yellow-400", bg: "bg-yellow-500/10" },
+          { label: "Pending Approval", value: pendingCount, color: "text-orange-400", bg: "bg-orange-500/10" },
           { label: "Active", value: userList.filter(u => u.isActive).length, color: "text-[#25D366]", bg: "bg-[#25D366]/10" },
         ].map(s => (
           <div key={s.label} className={`${s.bg} rounded-xl border border-gray-800 p-4`}>
-            <p className="text-gray-400 text-xs mb-1">{s.label}</p>
-            <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
+            <p className="text-gray-400 text-xs mb-2">{s.label}</p>
+            <p className={`text-3xl font-bold ${s.color}`}>{s.value}</p>
           </div>
         ))}
+      </div>
+
+      {/* Search and Filter Bar */}
+      <div className="flex flex-col gap-4">
+        {/* Search Input */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+          <input
+            type="text"
+            placeholder="Search by name or email..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-[#25D366] transition-colors"
+          />
+        </div>
+
+        {/* Filter Tabs */}
+        <div className="flex gap-2 flex-wrap">
+          {(["all", "pending", "active", "inactive"] as const).map((tab) => {
+            const tabLabels = { all: "All Users", pending: "Pending Approval", active: "Active", inactive: "Inactive" };
+            const isActive = filterTab === tab;
+            return (
+              <button
+                key={tab}
+                onClick={() => setFilterTab(tab)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  isActive
+                    ? "bg-[#25D366] text-white"
+                    : "bg-gray-800 text-gray-300 hover:bg-gray-700"
+                }`}
+              >
+                {tabLabels[tab]}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Table */}
@@ -545,6 +874,11 @@ export default function UserManagement() {
             <Users className="w-8 h-8 mb-2 opacity-40" />
             <p>No users yet. Add one to get started.</p>
           </div>
+        ) : filteredList.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-32 text-gray-500">
+            <Users className="w-8 h-8 mb-2 opacity-40" />
+            <p>No users match your filters.</p>
+          </div>
         ) : (
           <table className="w-full text-sm">
             <thead>
@@ -552,16 +886,22 @@ export default function UserManagement() {
                 <th className="px-5 py-3 text-left">User</th>
                 <th className="px-5 py-3 text-left">Role</th>
                 <th className="px-5 py-3 text-left">Status</th>
+                <th className="px-5 py-3 text-left">Verification</th>
                 <th className="px-5 py-3 text-left">Last Login</th>
                 <th className="px-5 py-3 text-left">Joined</th>
                 <th className="px-5 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {userList.map((u, i) => {
+              {filteredList.map((u, i) => {
                 const isSelf = u.id === me?.id;
+                const isPending = !u.emailVerified;
                 return (
-                  <tr key={u.id} className={`border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors ${i === userList.length - 1 ? "border-0" : ""}`}>
+                  <tr
+                    key={u.id}
+                    onClick={() => setViewingUser(u as UserRow)}
+                    className={`border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors cursor-pointer ${isPending ? "bg-orange-500/5" : ""} ${i === filteredList.length - 1 ? "border-0" : ""}`}
+                  >
                     {/* User info */}
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-3">
@@ -601,6 +941,19 @@ export default function UserManagement() {
                         <span className={`w-1.5 h-1.5 rounded-full ${u.isActive ? "bg-[#25D366]" : "bg-gray-500"}`} />
                         {u.isActive ? "Active" : "Inactive"}
                       </span>
+                    </td>
+
+                    {/* Verification */}
+                    <td className="px-5 py-4">
+                      {u.emailVerified ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-[#25D366]/10 text-[#25D366]">
+                          <CheckCircle className="w-3 h-3" />Verified
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-yellow-500/10 text-yellow-400">
+                          <AlertCircle className="w-3 h-3" />Pending
+                        </span>
+                      )}
                     </td>
 
                     <td className="px-5 py-4 text-gray-400 text-xs">{fmtDate(u.lastLoginAt)}</td>
@@ -684,11 +1037,23 @@ export default function UserManagement() {
         />
       )}
 
-      {deletingUser && (
-        <ConfirmDelete
-          user={deletingUser}
-          onCancel={() => setDeletingUser(null)}
-          onConfirm={() => deleteUser.mutate({ id: deletingUser.id })}
+      <ConfirmDeleteDialog
+        isOpen={!!deletingUser}
+        user={deletingUser}
+        isLoading={deleteUser.isPending}
+        onCancel={() => setDeletingUser(null)}
+        onConfirm={() => deleteUser.mutate({ id: deletingUser!.id })}
+      />
+
+      {viewingUser && (
+        <UserDetailModal
+          user={viewingUser}
+          onClose={() => setViewingUser(null)}
+          onApprove={() => {
+            approveTenant.mutate({ tenantId: viewingUser.id });
+            setViewingUser(null);
+          }}
+          isApproving={approveTenant.isPending}
         />
       )}
     </div>

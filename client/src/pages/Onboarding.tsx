@@ -20,7 +20,6 @@ interface StepConfig {
 const STEPS: StepConfig[] = [
   { id: "welcome",  label: "Welcome",       icon: Zap,         description: "Get started" },
   { id: "business", label: "Business Info", icon: Building2,   description: "Your details" },
-  { id: "ai",       label: "AI Setup",      icon: Bot,         description: "Configure AI" },
   { id: "whatsapp", label: "WhatsApp",      icon: Smartphone,  description: "Connect" },
   { id: "done",     label: "All Done",      icon: CheckCircle2, description: "Complete" },
 ];
@@ -79,14 +78,13 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
       </div>
       <h2 className="text-2xl font-bold text-white mb-3">Welcome to WAFlow!</h2>
       <p className="text-gray-400 mb-8 max-w-md mx-auto leading-relaxed">
-        Let's get your AI receptionist up and running in just a few minutes. We'll walk you through
-        setting up your business info, configuring the AI, and connecting WhatsApp.
+        Let's get your WhatsApp connected in just a few minutes. We'll walk you through
+        setting up your business info and connecting WhatsApp. AI configuration will be handled by your admin.
       </p>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8 text-left">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8 text-left">
         {[
           { icon: Building2,  title: "Business Info",   desc: "Set your name, hours & timezone" },
-          { icon: Bot,        title: "AI Receptionist", desc: "Craft your bot's personality" },
           { icon: Smartphone, title: "WhatsApp",        desc: "Scan QR to go live" },
         ].map(({ icon: Icon, title, desc }) => (
           <div key={title} className="bg-gray-800/50 rounded-xl p-4 border border-gray-700">
@@ -557,7 +555,7 @@ export default function Onboarding() {
     },
   });
 
-  const [step, setStep] = useState(0); // 0 = welcome, 1 = business, 2 = ai, 3 = whatsapp, 4 = done
+  const [step, setStep] = useState(0); // 0 = welcome, 1 = business, 2 = whatsapp, 3 = done
 
   const next = () => setStep(s => Math.min(s + 1, STEPS.length - 1));
   const back = () => setStep(s => Math.max(s - 1, 0));
@@ -585,9 +583,8 @@ export default function Onboarding() {
         <div>
           {step === 0 && <WelcomeStep onNext={next} />}
           {step === 1 && <BusinessStep onNext={next} onBack={back} />}
-          {step === 2 && <AIStep onNext={next} onBack={back} />}
-          {step === 3 && <WhatsAppStep onNext={next} onBack={back} />}
-          {step === 4 && (
+          {step === 2 && <WhatsAppStep onNext={next} onBack={back} />}
+          {step === 3 && (
             <DoneStep
               onFinish={() => completeMutation.mutate()}
               isLoading={completeMutation.isPending}

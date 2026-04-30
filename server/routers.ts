@@ -27,6 +27,7 @@ import { selfServiceRouter } from "./routers/selfServiceRouter.js";
 import { outboundWebhooksRouter } from "./routers/outboundWebhooksRouter.js";
 import { customFieldsRouter } from "./routers/customFieldsRouter.js";
 import { promptExpertRouter } from "./routers/promptExpertRouter.js";
+import { systemPromptRouter } from "./routers/systemPromptRouter.js";
 import { ticketsRouter } from "./routers/ticketsRouter.js";
 import { flowsRouter } from "./routers/flowsRouter.js";
 import { menuOptionsRouter } from "./routers/menuOptionsRouter.js";
@@ -63,6 +64,7 @@ export const appRouter = router({
   outboundWebhooks: outboundWebhooksRouter,
   customFields: customFieldsRouter,
   promptExpert: promptExpertRouter,
+  systemPrompt: systemPromptRouter,
   tickets: ticketsRouter,
   flows: flowsRouter,
   menuOptions: menuOptionsRouter,

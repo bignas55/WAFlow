@@ -90,6 +90,10 @@ export default function Monitoring() {
     onSuccess: () => { tenantOverviewQuery.refetch(); summaryStatsQuery.refetch(); },
   });
 
+  const approveTenantMutation = trpc.admin.approveTenant.useMutation({
+    onSuccess: () => { tenantOverviewQuery.refetch(); summaryStatsQuery.refetch(); },
+  });
+
   const handleManualRefresh = async () => {
     setIsRefreshing(true);
     await Promise.all([summaryStatsQuery.refetch(), tenantOverviewQuery.refetch()]);
@@ -167,19 +171,19 @@ export default function Monitoring() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  {["Name / Email","WhatsApp Status","Phone Number","Last Activity","Messages (24h)","Messages (7d)","Actions"].map(h => (
+                  {["Name / Email","WhatsApp Status","Phone Number","Last Activity","Messages (24h)","Messages (7d)","Verification","Actions"].map(h => (
                     <th key={h} className="px-6 py-3 text-left font-semibold text-gray-700">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {tenantOverviewQuery.isLoading ? (
-                  <tr><td colSpan={7} className="px-6 py-8 text-center">
+                  <tr><td colSpan={8} className="px-6 py-8 text-center">
                     <RefreshCw className="w-5 h-5 text-gray-400 animate-spin mx-auto" />
                     <p className="text-gray-600 mt-2">Loading tenants...</p>
                   </td></tr>
                 ) : tenants.length === 0 ? (
-                  <tr><td colSpan={7} className="px-6 py-8 text-center text-gray-600">No tenants found</td></tr>
+                  <tr><td colSpan={8} className="px-6 py-8 text-center text-gray-600">No tenants found</td></tr>
                 ) : tenants.map(tenant => (
                   <tr key={tenant.id} className="border-b border-gray-200 hover:bg-gray-50 transition-colors">
                     <td className="px-6 py-4">
@@ -206,7 +210,27 @@ export default function Monitoring() {
                     </td>
                     <td className="px-6 py-4 text-gray-600">{tenant.stats.messages7d}</td>
                     <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
+                      {tenant.emailVerified ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                          <CheckCircle className="w-3 h-3" />Verified
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">
+                          <Clock className="w-3 h-3" />Pending
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {!tenant.emailVerified && (
+                          <button
+                            onClick={() => approveTenantMutation.mutate({ tenantId: tenant.id })}
+                            disabled={approveTenantMutation.isPending}
+                            className="px-3 py-1 bg-green-100 hover:bg-green-200 disabled:bg-gray-200 text-green-700 disabled:text-gray-500 text-xs font-medium rounded transition-colors"
+                          >
+                            {approveTenantMutation.isPending ? "..." : "Approve"}
+                          </button>
+                        )}
                         {tenant.whatsapp.status === "connected" && (
                           <button
                             onClick={() => disconnectMutation.mutate({ tenantId: tenant.id })}

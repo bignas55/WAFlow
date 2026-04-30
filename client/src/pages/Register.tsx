@@ -75,13 +75,22 @@ export default function Register() {
     email: "",
     password: "",
     phone: "",
+    timezone: "Africa/Johannesburg",
+    businessHoursEnabled: false,
+    businessHoursStart: "09:00",
+    businessHoursEnd: "17:00",
+    afterHoursMessage: "",
   });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
 
   const registerMutation = trpc.auth.selfRegister.useMutation({
     onSuccess: (data) => {
-      if (data.requiresVerification) {
+      if (data.pendingAdminApproval) {
+        // User must wait for admin approval
+        navigate(`/pending-approval?email=${encodeURIComponent(data.email)}`);
+      } else if (data.requiresVerification) {
+        // Fallback to email verification if needed
         navigate(`/verify-email?email=${encodeURIComponent(data.email)}`);
       } else {
         window.location.href = "/onboarding";
@@ -105,6 +114,11 @@ export default function Register() {
       email: form.email,
       password: form.password,
       phone: form.phone || undefined,
+      timezone: form.timezone,
+      businessHoursEnabled: form.businessHoursEnabled,
+      businessHoursStart: form.businessHoursStart,
+      businessHoursEnd: form.businessHoursEnd,
+      afterHoursMessage: form.afterHoursMessage,
     });
   };
 
@@ -295,6 +309,76 @@ export default function Register() {
                   className="w-full bg-white/5 border border-white/10 text-white placeholder-gray-600 rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-[#25D366] transition"
                 />
               </div>
+            </div>
+
+            {/* Business Setup Section */}
+            <div className="pt-4 border-t border-white/10">
+              <p className="text-xs text-gray-500 uppercase tracking-wider font-medium mb-4">Business Information</p>
+
+              {/* Timezone */}
+              <div>
+                <label className="block text-sm text-gray-400 mb-1.5">Timezone</label>
+                <select
+                  value={form.timezone}
+                  onChange={(e) => setForm(f => ({ ...f, timezone: e.target.value }))}
+                  className="w-full bg-white/5 border border-white/10 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#25D366] transition"
+                >
+                  <option value="Africa/Johannesburg">Africa/Johannesburg</option>
+                  <option value="Africa/Lagos">Africa/Lagos</option>
+                  <option value="Europe/London">Europe/London</option>
+                  <option value="America/New_York">America/New_York</option>
+                  <option value="Asia/Dubai">Asia/Dubai</option>
+                </select>
+              </div>
+
+              {/* Business Hours Toggle */}
+              <div className="mt-3">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.businessHoursEnabled}
+                    onChange={(e) => setForm(f => ({ ...f, businessHoursEnabled: e.target.checked }))}
+                    className="w-4 h-4 rounded bg-white/10 border border-white/20 accent-[#25D366]"
+                  />
+                  <span className="text-sm text-gray-400">Enable Business Hours</span>
+                </label>
+              </div>
+
+              {/* Business Hours - conditional */}
+              {form.businessHoursEnabled && (
+                <>
+                  <div className="grid grid-cols-2 gap-3 mt-3">
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1.5">Opens at</label>
+                      <input
+                        type="time"
+                        value={form.businessHoursStart}
+                        onChange={(e) => setForm(f => ({ ...f, businessHoursStart: e.target.value }))}
+                        className="w-full bg-white/5 border border-white/10 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#25D366] transition"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1.5">Closes at</label>
+                      <input
+                        type="time"
+                        value={form.businessHoursEnd}
+                        onChange={(e) => setForm(f => ({ ...f, businessHoursEnd: e.target.value }))}
+                        className="w-full bg-white/5 border border-white/10 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#25D366] transition"
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-3">
+                    <label className="block text-xs text-gray-500 mb-1.5">After-hours Message</label>
+                    <textarea
+                      value={form.afterHoursMessage}
+                      onChange={(e) => setForm(f => ({ ...f, afterHoursMessage: e.target.value }))}
+                      placeholder="e.g. Thank you for reaching out! We're closed now but will respond during business hours."
+                      rows={2}
+                      className="w-full bg-white/5 border border-white/10 text-white placeholder-gray-600 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#25D366] transition resize-none"
+                    />
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Password */}

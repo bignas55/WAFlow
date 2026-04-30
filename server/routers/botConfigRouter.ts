@@ -45,13 +45,19 @@ export const botConfigRouter = router({
       // Continue with tenant's own settings if global fetch fails
     }
 
+    // Decrypt Claude API key if present
+    const claudeApiKey = decrypt(config.claudeApiKey || "");
+
     return {
       businessName: config.businessName,
       systemPrompt: config.systemPrompt,
+      aiProvider: config.aiProvider || "groq",
       aiApiUrl: aiApiUrl,
       aiApiKey: aiApiKey,
       aiModel: aiModel,
       aiTemperature: parseFloat(aiTemperature),
+      claudeApiKey: claudeApiKey,
+      claudeModel: config.claudeModel || "claude-3-5-sonnet-20241022",
       phoneNumberId: config.whatsappPhoneNumberId,
       businessAccountId: config.whatsappBusinessAccountId,
       accessToken: config.whatsappAccessToken,
@@ -131,9 +137,12 @@ export const botConfigRouter = router({
     .input(z.object({
       businessName: z.string().optional(),
       systemPrompt: z.string().optional(),
+      aiProvider: z.enum(["groq", "claude", "ollama"]).optional(),
       aiApiUrl: z.string().optional(),
       aiApiKey: z.string().optional(),
       aiModel: z.string().optional(),
+      claudeApiKey: z.string().optional(),
+      claudeModel: z.string().optional(),
       phoneNumberId: z.string().optional(),
       businessAccountId: z.string().optional(),
       accessToken: z.string().optional(),
@@ -145,8 +154,6 @@ export const botConfigRouter = router({
       businessDays: z.array(z.string()).optional(),
       afterHoursMessage: z.string().optional(),
       maxConversationLength: z.number().optional(),
-      responseDelay: z.number().optional(),
-      notificationsEnabled: z.boolean().optional(),
       escalationEmail: z.string().optional(),
       escalationPhone: z.string().optional(),
       // Language
@@ -216,9 +223,12 @@ export const botConfigRouter = router({
       const colUpdates: Record<string, unknown> = { updatedAt: new Date() };
       if (input.businessName !== undefined) colUpdates.businessName = input.businessName;
       if (input.systemPrompt !== undefined) colUpdates.systemPrompt = input.systemPrompt;
+      if (input.aiProvider !== undefined) colUpdates.aiProvider = input.aiProvider;
       if (input.aiApiUrl !== undefined) colUpdates.aiApiUrl = input.aiApiUrl;
       if (input.aiApiKey !== undefined) colUpdates.aiApiKey = encryptIfNeeded(input.aiApiKey);
       if (input.aiModel !== undefined) colUpdates.aiModel = input.aiModel;
+      if (input.claudeApiKey !== undefined) colUpdates.claudeApiKey = encryptIfNeeded(input.claudeApiKey);
+      if (input.claudeModel !== undefined) colUpdates.claudeModel = input.claudeModel;
       if (input.phoneNumberId !== undefined) colUpdates.whatsappPhoneNumberId = input.phoneNumberId;
       if (input.businessAccountId !== undefined) colUpdates.whatsappBusinessAccountId = input.businessAccountId;
       if (input.accessToken !== undefined) colUpdates.whatsappAccessToken = input.accessToken;
@@ -325,21 +335,32 @@ export const botConfigRouter = router({
 
   // Ping the configured AI endpoint to check it's reachable
   checkAI: protectedProcedure.query(async ({ ctx }) => {
-    const [config] = await db.select({ aiApiUrl: botConfig.aiApiUrl, aiModel: botConfig.aiModel, aiApiKey: botConfig.aiApiKey })
+    const [config] = await db.select({ aiProvider: botConfig.aiProvider, aiApiUrl: botConfig.aiApiUrl, aiModel: botConfig.aiModel, aiApiKey: botConfig.aiApiKey, claudeApiKey: botConfig.claudeApiKey })
       .from(botConfig).where(eq(botConfig.tenantId, ctx.user.userId)).limit(1);
-    if (!config?.aiApiUrl) return { ok: false, error: "No AI API URL configured" };
+
+    // If Claude is configured, check tenant key first, then fall back to .env
+    if (config?.aiProvider === 'claude') {
+      const decryptedKey = decrypt(config.claudeApiKey || "") || process.env.CLAUDE_API_KEY;
+      if (!decryptedKey) return { ok: false, error: "No Claude API key configured (set CLAUDE_API_KEY in .env or configure in Settings)" };
+      return { ok: true, model: 'claude', source: decrypt(config.claudeApiKey || "") ? 'tenant' : 'env' };
+    }
+
+    // For Groq/Ollama, use tenant config if available, otherwise fall back to .env
+    const aiApiUrl = config?.aiApiUrl || process.env.AI_API_URL || "http://localhost:11434/v1";
+    const aiApiKeyEncrypted = decrypt(config?.aiApiKey || "");
+    const aiApiKey = aiApiKeyEncrypted || process.env.AI_API_KEY || "ollama";
+
     try {
       const headers: Record<string, string> = {};
-      const decryptedKey = decrypt(config.aiApiKey || "");
-      if (decryptedKey && decryptedKey !== "ollama") {
-        headers["Authorization"] = `Bearer ${decryptedKey}`;
+      if (aiApiKey && aiApiKey !== "ollama") {
+        headers["Authorization"] = `Bearer ${aiApiKey}`;
       }
-      const res = await fetch(`${config.aiApiUrl.replace(/\/+$/, "")}/models`, {
+      const res = await fetch(`${aiApiUrl.replace(/\/+$/, "")}/models`, {
         headers,
         signal: AbortSignal.timeout(4000),
       });
       if (!res.ok) return { ok: false, error: `AI endpoint returned ${res.status}` };
-      return { ok: true, model: config.aiModel };
+      return { ok: true, model: config?.aiModel || "default", source: config?.aiApiUrl ? 'tenant' : 'env' };
     } catch (e: any) {
       return { ok: false, error: e?.message ?? "Connection failed" };
     }

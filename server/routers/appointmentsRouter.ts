@@ -11,21 +11,40 @@ import { WhatsAppBusinessAPI } from "../whatsapp/WhatsAppBusinessAPI.js";
 import { fireWebhookEvent } from "../services/webhookService.js";
 import { logAction } from "../services/auditService.js";
 import { GoogleCalendarService } from "../services/calendarService.js";
+import { emailService } from "../services/emailService.js";
 
 const calSvc = new GoogleCalendarService();
 
-async function sendConfirmation(tenantId: number, phone: string, customerName: string | null, serviceName: string, date: string, time: string, businessName: string): Promise<void> {
+async function sendConfirmation(tenantId: number, phone: string, customerName: string | null, customerEmail: string | null, serviceName: string, date: string, time: string, businessName: string): Promise<void> {
   const name = customerName ? `, ${customerName}` : "";
   const [y, m, d] = date.split("-").map(Number);
   const apptDate = new Date(y, m - 1, d);
   const friendlyDate = apptDate.toLocaleDateString("en-ZA", { weekday: "long", day: "numeric", month: "long" });
   const msg = `✅ *Appointment Confirmed*\n\nHi${name}! Your appointment has been booked at *${businessName}*.\n\n📅 *${friendlyDate}* at *${time}*\n💼 *Service:* ${serviceName}\n\nIf you need to reschedule or cancel, just reply to this message.`;
+
+  // Send WhatsApp confirmation
   const ok = await sendViaWhatsAppWeb(tenantId, phone, msg);
   if (!ok) {
     try {
       const api = await WhatsAppBusinessAPI.fromConfig(tenantId);
       await api.sendTextMessage(phone, msg);
     } catch { /* non-fatal */ }
+  }
+
+  // Send email confirmation if customer has email on file
+  if (customerEmail) {
+    try {
+      await emailService.sendBookingConfirmationEmail(
+        customerEmail,
+        customerName || "Valued Customer",
+        serviceName,
+        friendlyDate,
+        time
+      );
+    } catch (err) {
+      console.warn("⚠️  Could not send booking confirmation email:", (err as Error).message);
+      // Non-fatal — appointment already confirmed via WhatsApp
+    }
   }
 }
 
@@ -243,6 +262,7 @@ export const appointmentsRouter = router({
       if (cfg?.enableApptConfirmation !== false) {
         sendConfirmation(
           tenantId, input.customerPhone, input.customerName ?? null,
+          (customer as any).email ?? null,  // Customer email if available
           service?.name ?? "appointment", input.date, input.time,
           cfg?.businessName ?? "us"
         ).catch(() => {});

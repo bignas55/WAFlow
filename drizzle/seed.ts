@@ -108,9 +108,9 @@ Always respond in the same language the customer is using.`,
   ]).onDuplicateKeyUpdate({ set: { name: sql`VALUES(name)` } });
 
   await db.insert(services).values([
-    { name: "Consultation", description: "30-minute initial consultation", duration: 30, price: "0.00", color: "#25D366" },
-    { name: "Standard Service", description: "Standard service appointment", duration: 60, price: "500.00", color: "#128C7E" },
-    { name: "Premium Service", description: "Premium 2-hour service", duration: 120, price: "1200.00", color: "#075E54" },
+    { tenantId: adminId, name: "Consultation", description: "30-minute initial consultation", duration: 30, price: "0.00", color: "#25D366" },
+    { tenantId: adminId, name: "Standard Service", description: "Standard service appointment", duration: 60, price: "500.00", color: "#128C7E" },
+    { tenantId: adminId, name: "Premium Service", description: "Premium 2-hour service", duration: 120, price: "1200.00", color: "#075E54" },
   ]).onDuplicateKeyUpdate({ set: { name: sql`VALUES(name)` } });
 
   for (let day = 1; day <= 5; day++) {

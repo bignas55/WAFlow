@@ -1,5 +1,5 @@
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Activity, MessageSquare, Users, UserCheck, BarChart2, LogOut, Zap, Menu, CalendarDays, UserCog, UsersRound, Shield, Bot, Inbox, Database, Settings, Calendar, CreditCard, Megaphone, ContactRound, ShieldCheck, UserRound, Sun, Moon, Award, Star, TrendingUp, Webhook, Sparkles, Ticket, GitBranch, Search, Command } from "lucide-react";
+import { LayoutDashboard, Activity, MessageSquare, Users, UserCheck, BarChart2, LogOut, Zap, Menu, CalendarDays, UserCog, UsersRound, Shield, Bot, Inbox, Database, Settings, Calendar, CreditCard, Megaphone, ContactRound, ShieldCheck, UserRound, Sun, Moon, Award, Star, TrendingUp, Webhook, Sparkles, Ticket, GitBranch, Search, Command, Wand2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { useWhatsAppSocket } from "../hooks/useWhatsAppSocket";
@@ -15,7 +15,6 @@ const ADMIN_NAV = [
   { to: "/inbox", icon: Inbox, label: "My Inbox" },
   { to: "/appointments", icon: Calendar, label: "Appointments" },
   { to: "/monitoring", icon: Activity, label: "Monitoring" },
-  { to: "/tenant-setup", icon: Users, label: "Tenant Setup" },
   { to: "/user-management", icon: UsersRound, label: "Users" },
   { to: "/knowledge-base", icon: Database, label: "Train AI" },
   { to: "/templates", icon: MessageSquare, label: "Templates" },
@@ -44,6 +43,7 @@ const TENANT_NAV = [
   { to: "/feedback", icon: Star, label: "Feedback" },
   { to: "/staff-performance", icon: TrendingUp, label: "Performance" },
   { to: "/business-rules", icon: Zap, label: "Business Rules" },
+  { to: "/system-prompt-generator", icon: Wand2, label: "AI Prompt Studio" },
   { to: "/audit-log", icon: ShieldCheck, label: "Audit Log" },
   { to: "/billing", icon: CreditCard, label: "Billing" },
   { to: "/pricing", icon: Sparkles, label: "Upgrade Plan" },

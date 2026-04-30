@@ -24,6 +24,13 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    middlewareMode: false,
+    allowedHosts: ["localhost", "127.0.0.1", "cyclist-majorette-ripeness.ngrok-free.dev"],
+    hmr: {
+      protocol: "https",
+      host: "cyclist-majorette-ripeness.ngrok-free.dev",
+      port: 443,
+    },
     proxy: {
       "/api": {
         target: "http://localhost:3000",
